@@ -19,3 +19,25 @@ extract scores from videos into a pdf.
 
 - First takes the url, downloads, then send to frontend to display in editing page.
 - For second part, take the time parameters and image section and return the list of images.
+
+## Running the Project
+
+### Run Backend
+
+1. Navigate to the `backend` directory:
+
+   ```bash
+   cd backend
+   ```
+
+2. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Run the Flask application (runs on port 8080):
+
+   ```bash
+   flask run --port 8080
+   ```

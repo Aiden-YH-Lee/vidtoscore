@@ -10,15 +10,17 @@ export default function LandingPage() {
     const handleClick = async () => {
         console.log('URL submitted:', url);
         try {
-            const res = await fetch('http://localhost:5000/api/video/upload', {
+            const res = await fetch('http://localhost:8080/api/video/upload', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ url }),
             });
-            const data = await res.json();
-            console.log('Response:', data);
+            console.log('Response status:', res.status);
+            // const data = await res.json();
+            // console.log('Response:', data);
+
         } catch (error) {
             console.error('Error:', error);
         }
