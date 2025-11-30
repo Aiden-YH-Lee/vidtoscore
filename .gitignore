@@ -3,3 +3,4 @@
 *.mov
 .env
 __pycache__/
+CLAUDE.md
