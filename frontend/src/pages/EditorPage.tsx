@@ -35,6 +35,8 @@ export default function EditorPage() {
     const [showCropTool, setShowCropTool] = useState(false);
     const [extracting, setExtracting] = useState(false);
     const [error, setError] = useState('');
+    const [frameScale, setFrameScale] = useState({ width: 1, height: 1 });
+    const imgRef = useRef<HTMLImageElement>(null);
 
     useEffect(() => {
         if (!videoData) {
@@ -82,6 +84,12 @@ export default function EditorPage() {
             setCapturedFrame(frameData);
             setShowCropTool(true);
 
+            // Store actual frame dimensions for scaling calculations
+            setFrameScale({
+                width: video.videoWidth,
+                height: video.videoHeight
+            });
+
             // Initialize crop to a reasonable default
             setCrop({
                 unit: 'px',
@@ -90,6 +98,16 @@ export default function EditorPage() {
                 width: Math.min(canvas.width, 800),
                 height: Math.min(canvas.height, 400)
             });
+        }
+    };
+
+    // Calculate scale ratio when image is displayed
+    const handleImageLoad = () => {
+        if (imgRef.current) {
+            const displayedWidth = imgRef.current.clientWidth;
+            const displayedHeight = imgRef.current.clientHeight;
+            console.log('Actual video size:', frameScale.width, 'x', frameScale.height);
+            console.log('Displayed image size:', displayedWidth, 'x', displayedHeight);
         }
     };
 
@@ -109,6 +127,28 @@ export default function EditorPage() {
             return;
         }
 
+        // Calculate scale ratio between displayed image and actual video
+        const displayedWidth = imgRef.current?.clientWidth || frameScale.width;
+        const displayedHeight = imgRef.current?.clientHeight || frameScale.height;
+
+        const scaleX = frameScale.width / displayedWidth;
+        const scaleY = frameScale.height / displayedHeight;
+
+        // Scale crop coordinates to match actual video dimensions
+        const x1 = Math.max(0, Math.round(crop.x * scaleX));
+        const y1 = Math.max(0, Math.round(crop.y * scaleY));
+        const x2 = Math.round((crop.x + (crop.width || 0)) * scaleX);
+        const y2 = Math.round((crop.y + (crop.height || 0)) * scaleY);
+
+        console.log('Crop (displayed):', crop.x, crop.y, crop.width, crop.height);
+        console.log('Scale:', scaleX, scaleY);
+        console.log('Crop (actual):', x1, y1, x2 - x1, y2 - y1);
+
+        if (x1 < 0 || y1 < 0 || x1 >= x2 || y1 >= y2) {
+            setError('Invalid crop coordinates. Please redraw the crop region.');
+            return;
+        }
+
         setExtracting(true);
         setError('');
 
@@ -120,10 +160,10 @@ export default function EditorPage() {
                 },
                 body: JSON.stringify({
                     filename: videoData.filename,
-                    x1: Math.round(crop.x),
-                    y1: Math.round(crop.y),
-                    x2: Math.round(crop.x + (crop.width || 0)),
-                    y2: Math.round(crop.y + (crop.height || 0)),
+                    x1,
+                    y1,
+                    x2,
+                    y2,
                     start: startTime,
                     end: endTime,
                     interval: interval
@@ -257,9 +297,25 @@ export default function EditorPage() {
                                     <div style={{ maxHeight: '400px', overflow: 'auto', border: '1px solid #ccc' }}>
                                         <ReactCrop
                                             crop={crop}
-                                            onChange={(c) => setCrop(c)}
+                                            onChange={(c) => {
+                                                // Ensure coordinates are not negative
+                                                const validCrop = {
+                                                    ...c,
+                                                    x: Math.max(0, c.x || 0),
+                                                    y: Math.max(0, c.y || 0)
+                                                };
+                                                setCrop(validCrop);
+                                            }}
+                                            minWidth={50}
+                                            minHeight={50}
                                         >
-                                            <img src={capturedFrame} alt="Video frame" style={{ maxWidth: '100%' }} />
+                                            <img
+                                                ref={imgRef}
+                                                src={capturedFrame}
+                                                alt="Video frame"
+                                                style={{ maxWidth: '100%' }}
+                                                onLoad={handleImageLoad}
+                                            />
                                         </ReactCrop>
                                     </div>
                                     <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.5rem' }}>

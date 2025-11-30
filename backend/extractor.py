@@ -14,6 +14,10 @@ class VideoDownloadError(Exception):
 
 download_dir = "downloads"
 
+# Get absolute path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DOWNLOADS_DIR = os.path.join(BASE_DIR, download_dir)
+
 
 def download_video(vid_url):
     try:
@@ -40,19 +44,46 @@ def download_video(vid_url):
 
 
 def extract(file_name, x1, y1, x2, y2, start, end, interval):
-    video_file_path = os.path.join(download_dir, file_name)
+    video_file_path = os.path.join(DOWNLOADS_DIR, file_name)
+
+    if not os.path.exists(video_file_path):
+        raise FileNotFoundError(f"Video file not found: {video_file_path}")
 
     result = []
     video = cv2.VideoCapture(video_file_path)
 
+    if not video.isOpened():
+        raise ValueError("Failed to open video file")
+
+    # Get video dimensions for validation
+    frame_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    # Validate crop coordinates
+    if x1 < 0 or y1 < 0 or x2 > frame_width or y2 > frame_height:
+        video.release()
+        raise ValueError(f"Crop coordinates out of bounds. Video size: {frame_width}x{frame_height}, Crop: ({x1},{y1}) to ({x2},{y2})")
+
+    if x1 >= x2 or y1 >= y2:
+        video.release()
+        raise ValueError(f"Invalid crop coordinates: ({x1},{y1}) to ({x2},{y2})")
+
     for time in range(start, end, interval):
         video.set(cv2.CAP_PROP_POS_MSEC, time)
         success, img = video.read()
-        if success:
+        if success and img is not None:
             cropped_img = img[y1:y2, x1:x2]
-            result.append(cropped_img)
+            # Verify cropped image is not empty
+            if cropped_img.size > 0:
+                result.append(cropped_img)
+            else:
+                print(f"Warning: Empty crop at time {time}ms")
 
     video.release()
+
+    if not result:
+        raise ValueError("No frames were extracted. Check your time range and crop coordinates.")
+
     return result
 
 
@@ -63,10 +94,20 @@ def frames_to_pdf(frames):
 
     # Convert OpenCV images (BGR) to PIL Images (RGB)
     pil_images = []
-    for frame in frames:
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(rgb_frame)
-        pil_images.append(pil_img)
+    for i, frame in enumerate(frames):
+        if frame is None or frame.size == 0:
+            print(f"Warning: Skipping empty frame at index {i}")
+            continue
+        try:
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(rgb_frame)
+            pil_images.append(pil_img)
+        except Exception as e:
+            print(f"Warning: Failed to convert frame {i}: {e}")
+            continue
+
+    if not pil_images:
+        return None
 
     # Save as PDF in memory
     pdf_bytes = io.BytesIO()
