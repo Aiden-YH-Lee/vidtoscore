@@ -73,6 +73,9 @@ def extract_frames():
         start = int(data.get('start', 0))
         end = int(data.get('end', 0))
         interval = int(data.get('interval', 1000))
+        frames_per_page = int(data.get('framesPerPage', 1))
+        frame_width_percent = int(data.get('frameWidthPercent', 95))
+        gap = int(data.get('gap', 10))
 
         # Extract frames
         frames = extract(filename, x1, y1, x2, y2, start, end, interval)
@@ -80,8 +83,13 @@ def extract_frames():
         if not frames:
             return jsonify({'error': 'No frames extracted'}), 400
 
-        # Convert to PDF
-        pdf_bytes = frames_to_pdf(frames)
+        # Convert to PDF with vertical stacking layout
+        pdf_bytes = frames_to_pdf(
+            frames,
+            frames_per_page=frames_per_page,
+            frame_width_percent=frame_width_percent,
+            gap=gap
+        )
 
         if not pdf_bytes:
             return jsonify({'error': 'Failed to generate PDF'}), 500

@@ -87,8 +87,8 @@ def extract(file_name, x1, y1, x2, y2, start, end, interval):
     return result
 
 
-def frames_to_pdf(frames):
-    """Convert list of OpenCV frames to PDF bytes."""
+def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10):
+    """Convert list of OpenCV frames to PDF bytes with layout options."""
     if not frames:
         return None
 
@@ -109,14 +109,66 @@ def frames_to_pdf(frames):
     if not pil_images:
         return None
 
-    # Save as PDF in memory
+    # A4 page dimensions at 72 DPI (PDF points)
+    A4_WIDTH = 595  # pixels/points
+    A4_HEIGHT = 842  # pixels/points
+    PAGE_MARGIN = 40  # margin around the page
+
+    print(f"Generating PDF: {len(pil_images)} frames, {frames_per_page} per page, {frame_width_percent}% width, {gap}px gap")
+
+    # Get original frame dimensions
+    original_frame_width, original_frame_height = pil_images[0].size
+    print(f"Original frame size: {original_frame_width}x{original_frame_height}")
+
+    # Calculate scaled frame width to fit percentage of A4 width
+    available_width = A4_WIDTH - (2 * PAGE_MARGIN)
+    scaled_frame_width = int(available_width * (frame_width_percent / 100.0))
+
+    # Calculate scaled frame height maintaining aspect ratio
+    aspect_ratio = original_frame_height / original_frame_width
+    scaled_frame_height = int(scaled_frame_width * aspect_ratio)
+    print(f"Scaled frame size: {scaled_frame_width}x{scaled_frame_height}")
+
+    # Resize all frames to the target size
+    resized_frames = []
+    for img in pil_images:
+        resized = img.resize((scaled_frame_width, scaled_frame_height), Image.Resampling.LANCZOS)
+        resized_frames.append(resized)
+
+    print(f"Resized {len(resized_frames)} frames")
+
+    # Create pages with vertically stacked frames
+    pdf_pages = []
+    for page_num, page_start in enumerate(range(0, len(resized_frames), frames_per_page)):
+        page_frames = resized_frames[page_start:page_start + frames_per_page]
+        print(f"Creating page {page_num + 1} with {len(page_frames)} frames")
+
+        # Create blank A4 page
+        page = Image.new('RGB', (A4_WIDTH, A4_HEIGHT), 'white')
+
+        # Calculate starting Y position to center frames vertically
+        total_frames_height = sum(f.height for f in page_frames) + (gap * (len(page_frames) - 1))
+        y_offset = PAGE_MARGIN
+
+        # Stack frames vertically, centered horizontally
+        for idx, frame_img in enumerate(page_frames):
+            x_offset = (A4_WIDTH - frame_img.width) // 2  # Center horizontally
+            print(f"  Placing frame {idx + 1} at ({x_offset}, {y_offset})")
+            page.paste(frame_img, (x_offset, y_offset))
+            y_offset += frame_img.height + gap
+
+        pdf_pages.append(page)
+
+    print(f"Created {len(pdf_pages)} PDF pages")
+
+    # Save as PDF
     pdf_bytes = io.BytesIO()
-    pil_images[0].save(
+    pdf_pages[0].save(
         pdf_bytes,
         'PDF',
-        resolution=100.0,
+        resolution=72.0,
         save_all=True,
-        append_images=pil_images[1:]
+        append_images=pdf_pages[1:] if len(pdf_pages) > 1 else []
     )
     pdf_bytes.seek(0)
     return pdf_bytes

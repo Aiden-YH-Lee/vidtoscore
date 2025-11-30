@@ -35,8 +35,16 @@ export default function EditorPage() {
     const [showCropTool, setShowCropTool] = useState(false);
     const [extracting, setExtracting] = useState(false);
     const [error, setError] = useState('');
-    const [frameScale, setFrameScale] = useState({ width: 1, height: 1 });
+    const [videoDimensions, setVideoDimensions] = useState({ width: 1, height: 1 });
+    const [capturedImageDimensions, setCapturedImageDimensions] = useState({ natural: { width: 1, height: 1 }, displayed: { width: 1, height: 1 } });
     const imgRef = useRef<HTMLImageElement>(null);
+
+    // Preview and layout controls
+    const [previewFrames, setPreviewFrames] = useState<string[]>([]);
+    const [showPreview, setShowPreview] = useState(false);
+    const [framesPerPage, setFramesPerPage] = useState(3); // Default: fit 3 frames per page
+    const [frameGap, setFrameGap] = useState(10); // Gap between frames in pixels
+    const [frameWidthPercent, setFrameWidthPercent] = useState(95); // Frame width as % of page width
 
     useEffect(() => {
         if (!videoData) {
@@ -85,7 +93,7 @@ export default function EditorPage() {
             setShowCropTool(true);
 
             // Store actual frame dimensions for scaling calculations
-            setFrameScale({
+            setVideoDimensions({
                 width: video.videoWidth,
                 height: video.videoHeight
             });
@@ -104,10 +112,105 @@ export default function EditorPage() {
     // Calculate scale ratio when image is displayed
     const handleImageLoad = () => {
         if (imgRef.current) {
-            const displayedWidth = imgRef.current.clientWidth;
-            const displayedHeight = imgRef.current.clientHeight;
-            console.log('Actual video size:', frameScale.width, 'x', frameScale.height);
-            console.log('Displayed image size:', displayedWidth, 'x', displayedHeight);
+            const natural = {
+                width: imgRef.current.naturalWidth,
+                height: imgRef.current.naturalHeight
+            };
+            const displayed = {
+                width: imgRef.current.clientWidth,
+                height: imgRef.current.clientHeight
+            };
+            setCapturedImageDimensions({ natural, displayed });
+            console.log('Natural image size:', natural.width, 'x', natural.height);
+            console.log('Displayed image size:', displayed.width, 'x', displayed.height);
+            console.log('Scale factor:', natural.width / displayed.width);
+        }
+    };
+
+    // Generate preview frames
+    const handlePreview = async () => {
+        const video = videoRef.current;
+        if (!video || !crop.width || !crop.height) {
+            setError('Please select a crop region first');
+            return;
+        }
+
+        setExtracting(true);
+        setError('');
+        setPreviewFrames([]);
+
+        try {
+            // Scale crop coordinates from displayed image to natural image size
+            const scaleX = capturedImageDimensions.natural.width / capturedImageDimensions.displayed.width;
+            const scaleY = capturedImageDimensions.natural.height / capturedImageDimensions.displayed.height;
+
+            const x1 = Math.max(0, Math.round(crop.x * scaleX));
+            const y1 = Math.max(0, Math.round(crop.y * scaleY));
+            const width = Math.round((crop.width || 0) * scaleX);
+            const height = Math.round((crop.height || 0) * scaleY);
+
+            // Ensure coordinates are within video bounds
+            const x2 = Math.min(videoDimensions.width, x1 + width);
+            const y2 = Math.min(videoDimensions.height, y1 + height);
+            const finalWidth = x2 - x1;
+            const finalHeight = y2 - y1;
+
+            console.log('Crop (displayed):', crop.x, crop.y, crop.width, crop.height);
+            console.log('Scale factors:', scaleX, scaleY);
+            console.log('Crop (natural):', x1, y1, finalWidth, finalHeight);
+            console.log('Extracting frames with time:', startTime, 'to', endTime, 'interval', interval);
+
+            const frames: string[] = [];
+            const canvas = document.createElement('canvas');
+            canvas.width = finalWidth;
+            canvas.height = finalHeight;
+            const ctx = canvas.getContext('2d');
+
+            if (!ctx) {
+                setError('Failed to create canvas context');
+                setExtracting(false);
+                return;
+            }
+
+            const originalTime = video.currentTime;
+
+            // Extract frames
+            for (let time = startTime; time < endTime; time += interval) {
+                await new Promise<void>((resolve) => {
+                    const seekHandler = () => {
+                        try {
+                            // Draw cropped region
+                            ctx.drawImage(
+                                video,
+                                x1, y1, finalWidth, finalHeight,  // source
+                                0, 0, finalWidth, finalHeight      // destination
+                            );
+                            const dataUrl = canvas.toDataURL('image/png');
+                            frames.push(dataUrl);
+                            console.log(`Extracted frame at ${time}ms`);
+                        } catch (e) {
+                            console.error('Error drawing frame:', e);
+                        }
+                        video.removeEventListener('seeked', seekHandler);
+                        resolve();
+                    };
+
+                    video.addEventListener('seeked', seekHandler);
+                    video.currentTime = time / 1000;
+                });
+            }
+
+            // Restore original time
+            video.currentTime = originalTime;
+
+            console.log(`Extracted ${frames.length} frames`);
+            setPreviewFrames(frames);
+            setShowPreview(true);
+            setExtracting(false);
+        } catch (error) {
+            console.error('Preview error:', error);
+            setError('Failed to generate preview: ' + (error instanceof Error ? error.message : 'Unknown error'));
+            setExtracting(false);
         }
     };
 
@@ -127,25 +230,23 @@ export default function EditorPage() {
             return;
         }
 
-        // Calculate scale ratio between displayed image and actual video
-        const displayedWidth = imgRef.current?.clientWidth || frameScale.width;
-        const displayedHeight = imgRef.current?.clientHeight || frameScale.height;
+        // Scale crop coordinates from displayed image to natural image size
+        const scaleX = capturedImageDimensions.natural.width / capturedImageDimensions.displayed.width;
+        const scaleY = capturedImageDimensions.natural.height / capturedImageDimensions.displayed.height;
 
-        const scaleX = frameScale.width / displayedWidth;
-        const scaleY = frameScale.height / displayedHeight;
-
-        // Scale crop coordinates to match actual video dimensions
         const x1 = Math.max(0, Math.round(crop.x * scaleX));
         const y1 = Math.max(0, Math.round(crop.y * scaleY));
-        const x2 = Math.round((crop.x + (crop.width || 0)) * scaleX);
-        const y2 = Math.round((crop.y + (crop.height || 0)) * scaleY);
+        const x2 = Math.min(videoDimensions.width, Math.round((crop.x + (crop.width || 0)) * scaleX));
+        const y2 = Math.min(videoDimensions.height, Math.round((crop.y + (crop.height || 0)) * scaleY));
 
+        console.log('Video dimensions:', videoDimensions.width, 'x', videoDimensions.height);
         console.log('Crop (displayed):', crop.x, crop.y, crop.width, crop.height);
-        console.log('Scale:', scaleX, scaleY);
-        console.log('Crop (actual):', x1, y1, x2 - x1, y2 - y1);
+        console.log('Scale factors:', scaleX, scaleY);
+        console.log('Crop (scaled):', x1, y1, x2, y2);
+        console.log('Crop size:', x2 - x1, 'x', y2 - y1);
 
-        if (x1 < 0 || y1 < 0 || x1 >= x2 || y1 >= y2) {
-            setError('Invalid crop coordinates. Please redraw the crop region.');
+        if (x1 >= x2 || y1 >= y2) {
+            setError('Invalid crop region. Please redraw the crop area.');
             return;
         }
 
@@ -166,7 +267,10 @@ export default function EditorPage() {
                     y2,
                     start: startTime,
                     end: endTime,
-                    interval: interval
+                    interval: interval,
+                    framesPerPage: framesPerPage,
+                    frameWidthPercent: frameWidthPercent,
+                    gap: frameGap
                 }),
             });
 
@@ -326,9 +430,79 @@ export default function EditorPage() {
                             )}
                         </div>
 
-                        {/* Extract Button */}
+                        {/* PDF Layout Controls */}
+                        <div>
+                            <h3>PDF Layout (A4 Page)</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                                        Frames per page:
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={framesPerPage}
+                                        onChange={(e) => setFramesPerPage(Math.max(1, Number(e.target.value)))}
+                                        style={{ width: '80px', padding: '0.4rem' }}
+                                        min="1"
+                                        max="10"
+                                    />
+                                    <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+                                        (stacked vertically)
+                                    </span>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                                        Frame width: {frameWidthPercent}% of page
+                                    </label>
+                                    <input
+                                        type="range"
+                                        value={frameWidthPercent}
+                                        onChange={(e) => setFrameWidthPercent(Number(e.target.value))}
+                                        style={{ width: '100%' }}
+                                        min="70"
+                                        max="100"
+                                        step="5"
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                                        Gap between frames:
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={frameGap}
+                                        onChange={(e) => setFrameGap(Math.max(0, Number(e.target.value)))}
+                                        style={{ width: '80px', padding: '0.4rem' }}
+                                        min="0"
+                                        max="50"
+                                    />
+                                    <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>px</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Preview and Extract Buttons */}
                         <div style={{ marginTop: '1rem' }}>
                             {error && <p style={{ color: 'red', marginBottom: '0.5rem' }}>{error}</p>}
+
+                            <button
+                                onClick={handlePreview}
+                                disabled={extracting || !showCropTool}
+                                style={{
+                                    padding: '0.75rem 1.5rem',
+                                    fontSize: '1rem',
+                                    backgroundColor: showCropTool ? '#2196F3' : '#ccc',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: extracting || !showCropTool ? 'not-allowed' : 'pointer',
+                                    width: '100%',
+                                    marginBottom: '0.5rem'
+                                }}
+                            >
+                                {extracting ? 'Generating...' : 'Preview Frames'}
+                            </button>
+
                             <button
                                 onClick={handleExtract}
                                 disabled={extracting || !showCropTool}
@@ -354,6 +528,106 @@ export default function EditorPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Page-based Preview Section */}
+            {showPreview && previewFrames.length > 0 && (
+                <div style={{ marginTop: '2rem', padding: '1.5rem', backgroundColor: '#2c2c2c', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <h2 style={{ color: '#fff', margin: 0 }}>
+                            PDF Preview ({previewFrames.length} frames, {Math.ceil(previewFrames.length / framesPerPage)} pages)
+                        </h2>
+                        <button
+                            onClick={() => setShowPreview(false)}
+                            style={{ padding: '0.5rem 1rem', cursor: 'pointer', backgroundColor: '#fff', border: 'none', borderRadius: '4px' }}
+                        >
+                            Close Preview
+                        </button>
+                    </div>
+
+                    <p style={{ marginBottom: '1.5rem', color: '#ccc' }}>
+                        Layout: {framesPerPage} frame{framesPerPage > 1 ? 's' : ''} per page (stacked vertically), {frameWidthPercent}% width, {frameGap}px gap
+                    </p>
+
+                    {/* Page Preview - A4 sized pages with vertically stacked frames */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2rem',
+                        maxHeight: '800px',
+                        overflow: 'auto',
+                        padding: '1rem'
+                    }}>
+                        {(() => {
+                            const pages = [];
+                            const totalPages = Math.ceil(previewFrames.length / framesPerPage);
+
+                            for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+                                const pageFrames = previewFrames.slice(
+                                    pageNum * framesPerPage,
+                                    (pageNum + 1) * framesPerPage
+                                );
+
+                                pages.push(
+                                    <div key={pageNum} style={{
+                                        backgroundColor: 'white',
+                                        padding: '40px',
+                                        border: '1px solid #888',
+                                        borderRadius: '4px',
+                                        boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
+                                        width: '700px', // Larger for better visibility
+                                        minHeight: '990px', // A4 ratio: 700 * 1.414
+                                        margin: '0 auto',
+                                        display: 'flex',
+                                        flexDirection: 'column'
+                                    }}>
+                                        <div style={{
+                                            fontSize: '0.9rem',
+                                            color: '#666',
+                                            marginBottom: '10px',
+                                            textAlign: 'center',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            Page {pageNum + 1} of {totalPages}
+                                        </div>
+                                        {/* Vertically stacked frames */}
+                                        <div style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: `${frameGap}px`,
+                                            alignItems: 'center'
+                                        }}>
+                                            {pageFrames.map((frame, frameIdx) => (
+                                                <div key={frameIdx} style={{
+                                                    width: `${frameWidthPercent}%`,
+                                                    border: '1px solid #ddd',
+                                                    overflow: 'hidden',
+                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                                                }}>
+                                                    <img
+                                                        src={frame}
+                                                        alt={`Frame ${pageNum * framesPerPage + frameIdx + 1}`}
+                                                        style={{ width: '100%', height: 'auto', display: 'block' }}
+                                                    />
+                                                    <div style={{
+                                                        fontSize: '0.7rem',
+                                                        color: '#999',
+                                                        padding: '3px',
+                                                        textAlign: 'center',
+                                                        backgroundColor: '#f9f9f9'
+                                                    }}>
+                                                        #{pageNum * framesPerPage + frameIdx + 1}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            }
+                            return pages;
+                        })()}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
