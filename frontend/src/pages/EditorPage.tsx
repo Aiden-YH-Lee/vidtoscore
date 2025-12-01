@@ -5,6 +5,7 @@ import 'react-image-crop/dist/ReactCrop.css';
 
 interface VideoData {
     filename: string;
+    title: string;
     duration: number;
     width: number;
     height: number;
@@ -40,7 +41,12 @@ export default function EditorPage() {
     const imgRef = useRef<HTMLImageElement>(null);
 
     // Preview and layout controls
-    const [previewFrames, setPreviewFrames] = useState<string[]>([]);
+    interface FrameData {
+        id: number;
+        data: string;
+        timestamp: number;
+    }
+    const [previewFrames, setPreviewFrames] = useState<FrameData[]>([]);
     const [showPreview, setShowPreview] = useState(false);
     const [framesPerPage, setFramesPerPage] = useState(3); // Default: fit 3 frames per page
     const [frameGap, setFrameGap] = useState(10); // Gap between frames in pixels
@@ -65,6 +71,22 @@ export default function EditorPage() {
         const minutes = Math.floor(seconds / 60);
         const remainingSeconds = seconds % 60;
         return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    };
+
+    // Parse MM:SS format to milliseconds
+    const parseTime = (timeStr: string): number => {
+        const parts = timeStr.split(':');
+        if (parts.length === 1) {
+            // Just a number, treat as seconds
+            const seconds = parseInt(parts[0]) || 0;
+            return seconds * 1000;
+        } else if (parts.length === 2) {
+            // MM:SS format
+            const minutes = parseInt(parts[0]) || 0;
+            const seconds = parseInt(parts[1]) || 0;
+            return (minutes * 60 + seconds) * 1000;
+        }
+        return 0;
     };
 
     const handleSetStart = () => {
@@ -127,6 +149,11 @@ export default function EditorPage() {
         }
     };
 
+    // Delete a frame from preview
+    const handleDeleteFrame = (frameId: number) => {
+        setPreviewFrames(frames => frames.filter(f => f.id !== frameId));
+    };
+
     // Generate preview frames
     const handlePreview = async () => {
         const video = videoRef.current;
@@ -160,7 +187,7 @@ export default function EditorPage() {
             console.log('Crop (natural):', x1, y1, finalWidth, finalHeight);
             console.log('Extracting frames with time:', startTime, 'to', endTime, 'interval', interval);
 
-            const frames: string[] = [];
+            const frames: FrameData[] = [];
             const canvas = document.createElement('canvas');
             canvas.width = finalWidth;
             canvas.height = finalHeight;
@@ -175,6 +202,7 @@ export default function EditorPage() {
             const originalTime = video.currentTime;
 
             // Extract frames
+            let frameId = 0;
             for (let time = startTime; time < endTime; time += interval) {
                 await new Promise<void>((resolve) => {
                     const seekHandler = () => {
@@ -186,8 +214,8 @@ export default function EditorPage() {
                                 0, 0, finalWidth, finalHeight      // destination
                             );
                             const dataUrl = canvas.toDataURL('image/png');
-                            frames.push(dataUrl);
-                            console.log(`Extracted frame at ${time}ms`);
+                            frames.push({ id: frameId++, data: dataUrl, timestamp: time });
+                            console.log(`Extracted frame ${frameId} at ${time}ms`);
                         } catch (e) {
                             console.error('Error drawing frame:', e);
                         }
@@ -215,64 +243,86 @@ export default function EditorPage() {
     };
 
     const handleExtract = async () => {
-        if (startTime >= endTime) {
-            setError('End time must be after start time');
-            return;
-        }
-
-        if (interval <= 0) {
-            setError('Interval must be greater than 0');
-            return;
-        }
-
-        if (!crop.width || !crop.height) {
-            setError('Please select a crop region');
-            return;
-        }
-
-        // Scale crop coordinates from displayed image to natural image size
-        const scaleX = capturedImageDimensions.natural.width / capturedImageDimensions.displayed.width;
-        const scaleY = capturedImageDimensions.natural.height / capturedImageDimensions.displayed.height;
-
-        const x1 = Math.max(0, Math.round(crop.x * scaleX));
-        const y1 = Math.max(0, Math.round(crop.y * scaleY));
-        const x2 = Math.min(videoDimensions.width, Math.round((crop.x + (crop.width || 0)) * scaleX));
-        const y2 = Math.min(videoDimensions.height, Math.round((crop.y + (crop.height || 0)) * scaleY));
-
-        console.log('Video dimensions:', videoDimensions.width, 'x', videoDimensions.height);
-        console.log('Crop (displayed):', crop.x, crop.y, crop.width, crop.height);
-        console.log('Scale factors:', scaleX, scaleY);
-        console.log('Crop (scaled):', x1, y1, x2, y2);
-        console.log('Crop size:', x2 - x1, 'x', y2 - y1);
-
-        if (x1 >= x2 || y1 >= y2) {
-            setError('Invalid crop region. Please redraw the crop area.');
-            return;
-        }
-
         setExtracting(true);
         setError('');
 
         try {
-            const response = await fetch('http://localhost:8080/api/video/extract', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    filename: videoData.filename,
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    start: startTime,
-                    end: endTime,
-                    interval: interval,
-                    framesPerPage: framesPerPage,
-                    frameWidthPercent: frameWidthPercent,
-                    gap: frameGap
-                }),
-            });
+            let response;
+
+            // If we have preview frames, use them directly
+            if (previewFrames.length > 0) {
+                console.log(`Extracting PDF from ${previewFrames.length} previewed frames`);
+
+                response = await fetch('http://localhost:8080/api/video/extract-from-frames', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        frames: previewFrames.map(f => f.data),
+                        framesPerPage: framesPerPage,
+                        frameWidthPercent: frameWidthPercent,
+                        gap: frameGap,
+                        title: videoData.title
+                    }),
+                });
+            } else {
+                // Fall back to extracting from video (old method)
+                console.log('No preview frames available, extracting from video');
+
+                if (startTime >= endTime) {
+                    setError('End time must be after start time');
+                    setExtracting(false);
+                    return;
+                }
+
+                if (interval <= 0) {
+                    setError('Interval must be greater than 0');
+                    setExtracting(false);
+                    return;
+                }
+
+                if (!crop.width || !crop.height) {
+                    setError('Please select a crop region');
+                    setExtracting(false);
+                    return;
+                }
+
+                // Scale crop coordinates from displayed image to natural image size
+                const scaleX = capturedImageDimensions.natural.width / capturedImageDimensions.displayed.width;
+                const scaleY = capturedImageDimensions.natural.height / capturedImageDimensions.displayed.height;
+
+                const x1 = Math.max(0, Math.round(crop.x * scaleX));
+                const y1 = Math.max(0, Math.round(crop.y * scaleY));
+                const x2 = Math.min(videoDimensions.width, Math.round((crop.x + (crop.width || 0)) * scaleX));
+                const y2 = Math.min(videoDimensions.height, Math.round((crop.y + (crop.height || 0)) * scaleY));
+
+                if (x1 >= x2 || y1 >= y2) {
+                    setError('Invalid crop region. Please redraw the crop area.');
+                    setExtracting(false);
+                    return;
+                }
+
+                response = await fetch('http://localhost:8080/api/video/extract', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        filename: videoData.filename,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        start: startTime,
+                        end: endTime,
+                        interval: interval,
+                        framesPerPage: framesPerPage,
+                        frameWidthPercent: frameWidthPercent,
+                        gap: frameGap
+                    }),
+                });
+            }
 
             if (!response.ok) {
                 const data = await response.json();
@@ -328,12 +378,12 @@ export default function EditorPage() {
                     </div>
 
                     <div style={{ marginTop: '1rem' }}>
+                        <p style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                            {videoData.title}
+                        </p>
                         <p>Current Time: {formatTime(currentTime * 1000)}</p>
                         <p>Duration: {formatTime(videoData.duration)}</p>
                         <p>Resolution: {videoData.width} x {videoData.height}</p>
-                        <p style={{ fontSize: '0.8rem', color: '#888', wordBreak: 'break-all' }}>
-                            Video: {videoData.filename}
-                        </p>
                     </div>
                 </div>
 
@@ -346,25 +396,33 @@ export default function EditorPage() {
                         <div>
                             <h3>Time Range</h3>
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                <button onClick={handleSetStart}>Set Start</button>
+                                <button onClick={handleSetStart} style={{ minWidth: '80px' }}>Set Start</button>
                                 <input
-                                    type="number"
-                                    value={startTime}
-                                    onChange={(e) => setStartTime(Number(e.target.value))}
-                                    style={{ width: '100px' }}
+                                    type="text"
+                                    value={formatTime(startTime)}
+                                    onChange={(e) => {
+                                        const ms = parseTime(e.target.value);
+                                        if (ms >= 0) setStartTime(ms);
+                                    }}
+                                    placeholder="MM:SS"
+                                    style={{ width: '80px', fontFamily: 'monospace', padding: '0.4rem' }}
                                 />
-                                <span>ms ({formatTime(startTime)})</span>
+                                <span style={{ fontSize: '0.85rem', color: '#666' }}>({startTime}ms)</span>
                             </div>
 
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-                                <button onClick={handleSetEnd}>Set End</button>
+                                <button onClick={handleSetEnd} style={{ minWidth: '80px' }}>Set End</button>
                                 <input
-                                    type="number"
-                                    value={endTime}
-                                    onChange={(e) => setEndTime(Number(e.target.value))}
-                                    style={{ width: '100px' }}
+                                    type="text"
+                                    value={formatTime(endTime)}
+                                    onChange={(e) => {
+                                        const ms = parseTime(e.target.value);
+                                        if (ms >= 0) setEndTime(ms);
+                                    }}
+                                    placeholder="MM:SS"
+                                    style={{ width: '80px', fontFamily: 'monospace', padding: '0.4rem' }}
                                 />
-                                <span>ms ({formatTime(endTime)})</span>
+                                <span style={{ fontSize: '0.85rem', color: '#666' }}>({endTime}ms)</span>
                             </div>
 
                             <div style={{ marginTop: '0.5rem' }}>
@@ -505,23 +563,30 @@ export default function EditorPage() {
 
                             <button
                                 onClick={handleExtract}
-                                disabled={extracting || !showCropTool}
+                                disabled={extracting || (!showCropTool && previewFrames.length === 0)}
                                 style={{
                                     padding: '1rem 2rem',
                                     fontSize: '1.1rem',
-                                    backgroundColor: showCropTool ? '#4CAF50' : '#ccc',
+                                    backgroundColor: (showCropTool || previewFrames.length > 0) ? '#4CAF50' : '#ccc',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '4px',
-                                    cursor: extracting || !showCropTool ? 'not-allowed' : 'pointer',
+                                    cursor: extracting || (!showCropTool && previewFrames.length === 0) ? 'not-allowed' : 'pointer',
                                     width: '100%'
                                 }}
                             >
-                                {extracting ? 'Extracting...' : 'Extract to PDF'}
+                                {extracting ? 'Extracting...' :
+                                 previewFrames.length > 0 ? `Extract ${previewFrames.length} Frames to PDF` :
+                                 'Extract to PDF'}
                             </button>
-                            {!showCropTool && (
+                            {!showCropTool && previewFrames.length === 0 && (
                                 <p style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.5rem' }}>
                                     Please capture a frame and select crop region first
+                                </p>
+                            )}
+                            {previewFrames.length > 0 && (
+                                <p style={{ fontSize: '0.9rem', color: '#4CAF50', marginTop: '0.5rem' }}>
+                                    Ready to extract {previewFrames.length} previewed frame{previewFrames.length > 1 ? 's' : ''}
                                 </p>
                             )}
                         </div>
@@ -538,7 +603,7 @@ export default function EditorPage() {
                         </h2>
                         <button
                             onClick={() => setShowPreview(false)}
-                            style={{ padding: '0.5rem 1rem', cursor: 'pointer', backgroundColor: '#fff', border: 'none', borderRadius: '4px' }}
+                            style={{ padding: '0.5rem 1rem', cursor: 'pointer', backgroundColor: '#fff', color: '#000', border: '1px solid #ccc', borderRadius: '4px' }}
                         >
                             Close Preview
                         </button>
@@ -574,21 +639,37 @@ export default function EditorPage() {
                                         border: '1px solid #888',
                                         borderRadius: '4px',
                                         boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
-                                        width: '700px', // Larger for better visibility
-                                        minHeight: '990px', // A4 ratio: 700 * 1.414
+                                        width: '595px', // A4 width (matches backend PDF)
+                                        minHeight: '842px', // A4 height - use minHeight to allow scrolling if needed
                                         margin: '0 auto',
-                                        display: 'flex',
-                                        flexDirection: 'column'
+                                        position: 'relative'
                                     }}>
+                                        {/* Title (if present) */}
+                                        {videoData.title && (
+                                            <div style={{
+                                                fontSize: '1rem',
+                                                color: '#000',
+                                                marginBottom: '15px',
+                                                textAlign: 'center',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                {videoData.title}
+                                            </div>
+                                        )}
+
+                                        {/* Page number at bottom - absolute positioned to not affect layout */}
                                         <div style={{
-                                            fontSize: '0.9rem',
-                                            color: '#666',
-                                            marginBottom: '10px',
-                                            textAlign: 'center',
-                                            fontWeight: 'bold'
+                                            position: 'absolute',
+                                            bottom: '10px',
+                                            left: '0',
+                                            right: '0',
+                                            fontSize: '0.75rem',
+                                            color: '#999',
+                                            textAlign: 'center'
                                         }}>
-                                            Page {pageNum + 1} of {totalPages}
+                                            {pageNum + 1} / {totalPages}
                                         </div>
+
                                         {/* Vertically stacked frames */}
                                         <div style={{
                                             display: 'flex',
@@ -597,25 +678,55 @@ export default function EditorPage() {
                                             alignItems: 'center'
                                         }}>
                                             {pageFrames.map((frame, frameIdx) => (
-                                                <div key={frameIdx} style={{
+                                                <div key={frame.id} style={{
                                                     width: `${frameWidthPercent}%`,
                                                     border: '1px solid #ddd',
-                                                    overflow: 'hidden',
-                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                                                    overflow: 'visible',
+                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                                                    position: 'relative',
+                                                    marginRight: '50px' // Add space for side controls
                                                 }}>
                                                     <img
-                                                        src={frame}
+                                                        src={frame.data}
                                                         alt={`Frame ${pageNum * framesPerPage + frameIdx + 1}`}
                                                         style={{ width: '100%', height: 'auto', display: 'block' }}
                                                     />
+                                                    {/* Info positioned to the right side of the frame */}
                                                     <div style={{
-                                                        fontSize: '0.7rem',
-                                                        color: '#999',
-                                                        padding: '3px',
-                                                        textAlign: 'center',
-                                                        backgroundColor: '#f9f9f9'
+                                                        position: 'absolute',
+                                                        top: '0',
+                                                        left: '100%',
+                                                        marginLeft: '8px',
+                                                        fontSize: '0.65rem',
+                                                        color: '#666',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: '4px',
+                                                        whiteSpace: 'nowrap'
                                                     }}>
-                                                        #{pageNum * framesPerPage + frameIdx + 1}
+                                                        <span>#{pageNum * framesPerPage + frameIdx + 1}</span>
+                                                        <span>{formatTime(frame.timestamp)}</span>
+                                                        <button
+                                                            onClick={() => handleDeleteFrame(frame.id)}
+                                                            style={{
+                                                                padding: '4px',
+                                                                fontSize: '1rem',
+                                                                backgroundColor: '#ff4444',
+                                                                color: 'white',
+                                                                border: 'none',
+                                                                borderRadius: '3px',
+                                                                cursor: 'pointer',
+                                                                width: '24px',
+                                                                height: '24px',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                lineHeight: '1'
+                                                            }}
+                                                            title="Delete this frame"
+                                                        >
+                                                            ×
+                                                        </button>
                                                     </div>
                                                 </div>
                                             ))}

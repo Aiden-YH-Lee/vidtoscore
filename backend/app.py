@@ -3,10 +3,14 @@ from extractor import download_video, extract, frames_to_pdf, VideoDownloadError
 from flask_cors import CORS
 import cv2
 import os
+import base64
+import numpy as np
+from PIL import Image
+import io
 
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"]}})
 
 # Get absolute path to backend directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -22,8 +26,8 @@ def upload_video():
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
 
-        # Download the video
-        filename = download_video(url)
+        # Download the video and get title
+        filename, title = download_video(url)
 
         # Get video metadata
         video_path = os.path.join(DOWNLOADS_DIR, filename)
@@ -48,6 +52,7 @@ def upload_video():
 
         return jsonify({
             'filename': filename,
+            'title': title,
             'duration': duration,
             'width': width,
             'height': height,
@@ -103,6 +108,71 @@ def extract_frames():
 
     except Exception as e:
         return jsonify({'error': f'Extraction failed: {str(e)}'}), 500
+
+
+@app.route('/api/video/extract-from-frames', methods=['POST'])
+def extract_from_frames():
+    """Generate PDF from base64 encoded frames sent from frontend."""
+    try:
+        data = request.json
+
+        frames_data = data.get('frames', [])
+        frames_per_page = int(data.get('framesPerPage', 1))
+        frame_width_percent = int(data.get('frameWidthPercent', 95))
+        gap = int(data.get('gap', 10))
+        title = data.get('title')  # Optional title
+
+        if not frames_data:
+            return jsonify({'error': 'No frames provided'}), 400
+
+        # Convert base64 frames to OpenCV format
+        frames = []
+        for frame_b64 in frames_data:
+            try:
+                # Remove data URL prefix if present (e.g., "data:image/png;base64,")
+                if ',' in frame_b64:
+                    frame_b64 = frame_b64.split(',', 1)[1]
+
+                # Decode base64 to bytes
+                img_bytes = base64.b64decode(frame_b64)
+
+                # Convert to PIL Image
+                pil_img = Image.open(io.BytesIO(img_bytes))
+
+                # Convert PIL to OpenCV (RGB -> BGR)
+                opencv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                frames.append(opencv_img)
+            except Exception as e:
+                print(f"Error decoding frame: {e}")
+                continue
+
+        if not frames:
+            return jsonify({'error': 'Failed to decode frames'}), 400
+
+        print(f"Received {len(frames)} frames for PDF generation")
+
+        # Generate PDF
+        pdf_bytes = frames_to_pdf(
+            frames,
+            frames_per_page=frames_per_page,
+            frame_width_percent=frame_width_percent,
+            gap=gap,
+            title=title
+        )
+
+        if not pdf_bytes:
+            return jsonify({'error': 'Failed to generate PDF'}), 500
+
+        return send_file(
+            pdf_bytes,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name='sheet_music.pdf'
+        )
+
+    except Exception as e:
+        print(f"Error in extract_from_frames: {str(e)}")
+        return jsonify({'error': f'PDF generation failed: {str(e)}'}), 500
 
 
 @app.route('/api/video/file/<filename>')
