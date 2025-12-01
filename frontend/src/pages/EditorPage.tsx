@@ -60,6 +60,12 @@ export default function EditorPage() {
         }
     }, [videoData, navigate]);
 
+    // Recalculate optimal frames per page when crop or settings change
+    useEffect(() => {
+        calculateOptimalFramesPerPage();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [crop.width, crop.height, frameWidthPercent, frameGap]);
+
     if (!videoData) {
         return null;
     }
@@ -100,6 +106,30 @@ export default function EditorPage() {
     };
 
     const captureCurrentFrame = () => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        // If this is the first capture, seek to middle of video first
+        if (!showCropTool && videoData) {
+            const middleTime = videoData.duration / 2000; // Convert ms to seconds and divide by 2
+            console.log(`First capture: seeking to middle of video (${formatTime(middleTime * 1000)})`);
+
+            // Set up one-time event listener for when seek completes
+            const handleSeeked = () => {
+                video.removeEventListener('seeked', handleSeeked);
+                performCapture();
+            };
+
+            video.addEventListener('seeked', handleSeeked);
+            video.currentTime = middleTime;
+            return; // Exit and let the seeked event trigger the capture
+        }
+
+        // Otherwise capture current frame immediately
+        performCapture();
+    };
+
+    const performCapture = () => {
         const video = videoRef.current;
         if (!video) return;
 
@@ -146,6 +176,54 @@ export default function EditorPage() {
             console.log('Natural image size:', natural.width, 'x', natural.height);
             console.log('Displayed image size:', displayed.width, 'x', displayed.height);
             console.log('Scale factor:', natural.width / displayed.width);
+        }
+    };
+
+    // Calculate optimal frames per page based on crop dimensions
+    const calculateOptimalFramesPerPage = () => {
+        if (!crop.width || !crop.height) return;
+
+        // Use A4 dimensions (at 72 DPI for calculation, will scale proportionally at 300 DPI)
+        const A4_WIDTH = 595;
+        const A4_HEIGHT = 842;
+        const PAGE_MARGIN = 40;
+        const TITLE_HEIGHT = 30;
+        const PAGE_NUMBER_HEIGHT = 20; // Reserve space for page number at bottom
+
+        const availableWidth = A4_WIDTH - (2 * PAGE_MARGIN);
+        const availableHeight = A4_HEIGHT - (2 * PAGE_MARGIN) - TITLE_HEIGHT - PAGE_NUMBER_HEIGHT;
+
+        const aspectRatio = crop.height / crop.width;
+
+        // Try different frame counts and find the maximum that fits
+        let optimalFrames = 1;
+        for (let testFrames = 1; testFrames <= 20; testFrames++) {
+            // Calculate frame size using width constraint
+            const targetWidth = availableWidth * (frameWidthPercent / 100);
+            const targetHeight = targetWidth * aspectRatio;
+
+            // Calculate total height needed for this many frames
+            const totalHeight = (targetHeight * testFrames) + (frameGap * (testFrames - 1));
+
+            // Check if it fits with some safety margin (5px)
+            if (totalHeight <= availableHeight - 5) {
+                optimalFrames = testFrames;
+            } else {
+                // Exceeded available space, use previous value
+                break;
+            }
+        }
+
+        console.log('Optimal frames calculation:', {
+            cropSize: `${crop.width}x${crop.height}`,
+            aspectRatio: aspectRatio.toFixed(3),
+            availableHeight: availableHeight.toFixed(0),
+            optimalFrames
+        });
+
+        if (optimalFrames > 0 && optimalFrames !== framesPerPage) {
+            setFramesPerPage(optimalFrames);
+            console.log(`Auto-set frames per page to ${optimalFrames}`);
         }
     };
 
@@ -496,17 +574,36 @@ export default function EditorPage() {
                                     <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
                                         Frames per page:
                                     </label>
-                                    <input
-                                        type="number"
-                                        value={framesPerPage}
-                                        onChange={(e) => setFramesPerPage(Math.max(1, Number(e.target.value)))}
-                                        style={{ width: '80px', padding: '0.4rem' }}
-                                        min="1"
-                                        max="10"
-                                    />
-                                    <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
-                                        (stacked vertically)
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <input
+                                            type="number"
+                                            value={framesPerPage}
+                                            onChange={(e) => setFramesPerPage(Math.max(1, Number(e.target.value)))}
+                                            style={{ width: '80px', padding: '0.4rem' }}
+                                            min="1"
+                                            max="20"
+                                        />
+                                        <span style={{ fontSize: '0.85rem', color: '#666' }}>
+                                            (stacked vertically)
+                                        </span>
+                                        {crop.width && crop.height && (
+                                            <button
+                                                onClick={calculateOptimalFramesPerPage}
+                                                style={{
+                                                    padding: '0.4rem 0.6rem',
+                                                    fontSize: '0.75rem',
+                                                    backgroundColor: '#4CAF50',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '3px',
+                                                    cursor: 'pointer'
+                                                }}
+                                                title="Auto-calculate optimal frames per page"
+                                            >
+                                                Auto
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
