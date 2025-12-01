@@ -119,13 +119,20 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
     if not pil_images:
         return None
 
-    # A4 page dimensions at 72 DPI (PDF points)
-    A4_WIDTH = 595  # pixels/points
-    A4_HEIGHT = 842  # pixels/points
-    PAGE_MARGIN = 40  # margin around the page
-    TITLE_HEIGHT = 30 if title else 0  # space for title at top
+    # A4 page dimensions at 300 DPI (high quality)
+    DPI = 300  # Increase from 72 (screen) to 300 (print quality)
+    DPI_SCALE = DPI / 72.0  # Scale factor: 300/72 = 4.17
 
-    print(f"Generating PDF: {len(pil_images)} frames, {frames_per_page} per page, {frame_width_percent}% width, {gap}px gap")
+    A4_WIDTH = int(595 * DPI_SCALE)   # 2480 pixels at 300 DPI
+    A4_HEIGHT = int(842 * DPI_SCALE)  # 3508 pixels at 300 DPI
+    PAGE_MARGIN = int(40 * DPI_SCALE)  # Scale margins proportionally
+    TITLE_HEIGHT = int(30 * DPI_SCALE) if title else 0  # Scale title height
+
+    # Scale gap for higher DPI
+    scaled_gap = int(gap * DPI_SCALE)
+
+    print(f"Generating PDF at {DPI} DPI: {len(pil_images)} frames, {frames_per_page} per page, {frame_width_percent}% width, {gap}px gap")
+    print(f"Page dimensions: {A4_WIDTH}x{A4_HEIGHT} pixels")
     if title:
         print(f"Adding title: {title}")
 
@@ -146,7 +153,7 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
     width_constrained_height = int(width_constrained_width * aspect_ratio)
 
     # 2. Height constraint: frames must fit in available height with gaps
-    max_frame_height = (available_height - (gap * (frames_per_page - 1))) // frames_per_page
+    max_frame_height = (available_height - (scaled_gap * (frames_per_page - 1))) // frames_per_page
     height_constrained_height = max_frame_height
     height_constrained_width = int(height_constrained_height / aspect_ratio)
 
@@ -164,7 +171,7 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
 
     print(f"Available space: {available_width}x{available_height}px")
     print(f"Scaled frame size: {target_frame_width}x{target_frame_height}px")
-    print(f"Total content height: {(target_frame_height * frames_per_page) + (gap * (frames_per_page - 1))}px / {available_height}px")
+    print(f"Total content height: {(target_frame_height * frames_per_page) + (scaled_gap * (frames_per_page - 1))}px / {available_height}px")
 
     # Resize all frames to the target size
     resized_frames = []
@@ -190,6 +197,8 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
         if title:
             try:
                 # Try different fonts that support Unicode/CJK characters
+                # Scale font size for higher DPI
+                title_font_size = int(16 * DPI_SCALE)
                 font_paths = [
                     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",  # macOS - supports all Unicode
                     "/System/Library/Fonts/AppleSDGothicNeo.ttc",  # macOS - Korean support
@@ -200,7 +209,7 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
                 font = None
                 for font_path in font_paths:
                     try:
-                        font = ImageFont.truetype(font_path, 16)
+                        font = ImageFont.truetype(font_path, title_font_size)
                         break
                     except:
                         continue
@@ -222,14 +231,15 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
             x_offset = (A4_WIDTH - frame_img.width) // 2  # Center horizontally
             print(f"  Placing frame {idx + 1} at ({x_offset}, {y_offset})")
             page.paste(frame_img, (x_offset, y_offset))
-            y_offset += frame_img.height + gap
+            y_offset += frame_img.height + scaled_gap
 
         # Add page number at the bottom
         try:
             page_num_text = f"{page_num + 1} / {total_pages}"
-            # Use small font for page number
+            # Use small font for page number, scaled for DPI
+            page_num_font_size = int(10 * DPI_SCALE)
             try:
-                page_num_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 10)
+                page_num_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", page_num_font_size)
             except:
                 page_num_font = ImageFont.load_default()
 
@@ -237,7 +247,7 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
             bbox = draw.textbbox((0, 0), page_num_text, font=page_num_font)
             text_width = bbox[2] - bbox[0]
             text_x = (A4_WIDTH - text_width) // 2
-            text_y = A4_HEIGHT - PAGE_MARGIN + 10  # Below the margin
+            text_y = A4_HEIGHT - PAGE_MARGIN + int(10 * DPI_SCALE)  # Below the margin
             draw.text((text_x, text_y), page_num_text, fill='#999999', font=page_num_font)
         except Exception as e:
             print(f"Warning: Could not add page number: {e}")
@@ -246,16 +256,17 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
 
     print(f"Created {len(pdf_pages)} PDF pages")
 
-    # Save as PDF
+    # Save as PDF with high resolution
     pdf_bytes = io.BytesIO()
     pdf_pages[0].save(
         pdf_bytes,
         'PDF',
-        resolution=72.0,
+        resolution=float(DPI),  # Use 300 DPI instead of 72
         save_all=True,
         append_images=pdf_pages[1:] if len(pdf_pages) > 1 else []
     )
     pdf_bytes.seek(0)
+    print(f"PDF generated at {DPI} DPI")
     return pdf_bytes
 
 
