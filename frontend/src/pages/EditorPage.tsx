@@ -428,17 +428,122 @@ export default function EditorPage() {
 
     const estimatedFrames = Math.ceil((endTime - startTime) / interval);
 
+    const styles = {
+        container: {
+            minHeight: '100vh',
+            background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+            padding: '2rem'
+        },
+        header: {
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '2rem',
+            background: 'white',
+            padding: '1.5rem 2rem',
+            borderRadius: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)'
+        },
+        title: {
+            fontSize: '2rem',
+            fontWeight: '800',
+            color: '#1f2937',
+            margin: 0,
+            letterSpacing: '-0.02em'
+        },
+        backButton: {
+            padding: '0.75rem 1.5rem',
+            fontSize: '0.95rem',
+            fontWeight: '600',
+            color: '#6b7280',
+            background: '#f3f4f6',
+            border: 'none',
+            borderRadius: '12px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+        },
+        card: {
+            background: 'white',
+            borderRadius: '24px',
+            padding: '2rem',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+            height: '100%'
+        },
+        sectionTitle: {
+            fontSize: '1.25rem',
+            fontWeight: '700',
+            color: '#1f2937',
+            marginTop: 0,
+            marginBottom: '1.5rem',
+            letterSpacing: '-0.01em'
+        },
+        button: {
+            padding: '0.75rem 1.25rem',
+            fontSize: '0.95rem',
+            fontWeight: '600',
+            color: 'white',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            border: 'none',
+            borderRadius: '12px',
+            cursor: 'pointer',
+            transition: 'all 0.3s ease',
+            boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+        },
+        input: {
+            padding: '0.75rem 1rem',
+            fontSize: '0.95rem',
+            border: '2px solid #e5e7eb',
+            borderRadius: '12px',
+            outline: 'none',
+            transition: 'all 0.2s ease',
+            fontFamily: 'monospace',
+            background: '#f9fafb'
+        },
+        subsectionTitle: {
+            fontSize: '1rem',
+            fontWeight: '600',
+            color: '#4b5563',
+            marginBottom: '0.75rem',
+            marginTop: '1.5rem',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+        } as React.CSSProperties,
+        previewContainer: {
+            marginTop: '2rem',
+            padding: '2rem',
+            background: 'white',
+            borderRadius: '24px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)'
+        } as React.CSSProperties
+    };
+
     return (
-        <div style={{ padding: '2rem' }}>
-            <h1>Video Editor</h1>
-            <button onClick={() => navigate('/')} style={{ marginBottom: '1rem' }}>
-                Back to Home
-            </button>
+        <div style={styles.container}>
+            <div style={styles.header}>
+                <h1 style={styles.title}>Video Editor</h1>
+                <button
+                    onClick={() => navigate('/')}
+                    style={styles.backButton}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#e5e7eb';
+                        e.currentTarget.style.color = '#1f2937';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#f3f4f6';
+                        e.currentTarget.style.color = '#6b7280';
+                    }}
+                >
+                    ← Back to Home
+                </button>
+            </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 {/* Video Player Section */}
-                <div>
-                    <h2>Video Preview</h2>
+                <div style={styles.card}>
+                    <h2 style={styles.sectionTitle}>Video Preview</h2>
                     <div style={{ backgroundColor: '#000', position: 'relative' }}>
                         <video
                             ref={videoRef}
@@ -466,15 +571,15 @@ export default function EditorPage() {
                 </div>
 
                 {/* Controls Section */}
-                <div>
-                    <h2>Extraction Settings</h2>
+                <div style={styles.card}>
+                    <h2 style={styles.sectionTitle}>Extraction Settings</h2>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         {/* Time Range Controls */}
                         <div>
-                            <h3>Time Range</h3>
+                            <h3 style={styles.subsectionTitle}>Time Range</h3>
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                <button onClick={handleSetStart} style={{ minWidth: '80px' }}>Set Start</button>
+                                <button onClick={handleSetStart} style={{ ...styles.button, minWidth: '80px', fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}>Set Start</button>
                                 <input
                                     type="text"
                                     value={formatTime(startTime)}
@@ -483,13 +588,13 @@ export default function EditorPage() {
                                         if (ms >= 0) setStartTime(ms);
                                     }}
                                     placeholder="MM:SS"
-                                    style={{ width: '80px', fontFamily: 'monospace', padding: '0.4rem' }}
+                                    style={{ ...styles.input, width: '80px', padding: '0.5rem' }}
                                 />
                                 <span style={{ fontSize: '0.85rem', color: '#666' }}>({startTime}ms)</span>
                             </div>
 
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-                                <button onClick={handleSetEnd} style={{ minWidth: '80px' }}>Set End</button>
+                                <button onClick={handleSetEnd} style={{ ...styles.button, minWidth: '80px', fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}>Set End</button>
                                 <input
                                     type="text"
                                     value={formatTime(endTime)}
@@ -498,7 +603,7 @@ export default function EditorPage() {
                                         if (ms >= 0) setEndTime(ms);
                                     }}
                                     placeholder="MM:SS"
-                                    style={{ width: '80px', fontFamily: 'monospace', padding: '0.4rem' }}
+                                    style={{ ...styles.input, width: '80px', padding: '0.5rem' }}
                                 />
                                 <span style={{ fontSize: '0.85rem', color: '#666' }}>({endTime}ms)</span>
                             </div>
@@ -510,7 +615,7 @@ export default function EditorPage() {
                                         type="number"
                                         value={interval}
                                         onChange={(e) => setInterval(Number(e.target.value))}
-                                        style={{ marginLeft: '0.5rem', width: '100px' }}
+                                        style={{ ...styles.input, marginLeft: '0.5rem', width: '100px', padding: '0.5rem' }}
                                         min="100"
                                         step="100"
                                     />
@@ -524,8 +629,8 @@ export default function EditorPage() {
 
                         {/* Crop Region Controls */}
                         <div>
-                            <h3>Crop Region</h3>
-                            <button onClick={captureCurrentFrame}>
+                            <h3 style={styles.subsectionTitle}>Crop Region</h3>
+                            <button onClick={captureCurrentFrame} style={styles.button}>
                                 {showCropTool ? 'Recapture Frame' : 'Capture Frame for Cropping'}
                             </button>
 
@@ -568,7 +673,7 @@ export default function EditorPage() {
 
                         {/* PDF Layout Controls */}
                         <div>
-                            <h3>PDF Layout (A4 Page)</h3>
+                            <h3 style={styles.subsectionTitle}>PDF Layout (A4 Page)</h3>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
@@ -579,7 +684,7 @@ export default function EditorPage() {
                                             type="number"
                                             value={framesPerPage}
                                             onChange={(e) => setFramesPerPage(Math.max(1, Number(e.target.value)))}
-                                            style={{ width: '80px', padding: '0.4rem' }}
+                                            style={{ ...styles.input, width: '80px', padding: '0.5rem' }}
                                             min="1"
                                             max="20"
                                         />
@@ -590,13 +695,16 @@ export default function EditorPage() {
                                             <button
                                                 onClick={calculateOptimalFramesPerPage}
                                                 style={{
-                                                    padding: '0.4rem 0.6rem',
-                                                    fontSize: '0.75rem',
+                                                    padding: '0.5rem 0.75rem',
+                                                    fontSize: '0.8rem',
+                                                    fontWeight: '600',
                                                     backgroundColor: '#4CAF50',
                                                     color: 'white',
                                                     border: 'none',
-                                                    borderRadius: '3px',
-                                                    cursor: 'pointer'
+                                                    borderRadius: '10px',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.3s ease',
+                                                    boxShadow: '0 2px 8px rgba(76, 175, 80, 0.3)'
                                                 }}
                                                 title="Auto-calculate optimal frames per page"
                                             >
@@ -627,7 +735,7 @@ export default function EditorPage() {
                                         type="number"
                                         value={frameGap}
                                         onChange={(e) => setFrameGap(Math.max(0, Number(e.target.value)))}
-                                        style={{ width: '80px', padding: '0.4rem' }}
+                                        style={{ ...styles.input, width: '80px', padding: '0.5rem' }}
                                         min="0"
                                         max="50"
                                     />
@@ -638,7 +746,7 @@ export default function EditorPage() {
 
                         {/* Preview and Extract Buttons */}
                         <div style={{ marginTop: '1rem' }}>
-                            {error && <p style={{ color: 'red', marginBottom: '0.5rem' }}>{error}</p>}
+                            {error && <p style={{ color: '#ef4444', marginBottom: '0.5rem', fontWeight: '500' }}>{error}</p>}
 
                             <button
                                 onClick={handlePreview}
@@ -646,13 +754,16 @@ export default function EditorPage() {
                                 style={{
                                     padding: '0.75rem 1.5rem',
                                     fontSize: '1rem',
-                                    backgroundColor: showCropTool ? '#2196F3' : '#ccc',
+                                    fontWeight: '600',
+                                    background: showCropTool ? 'linear-gradient(135deg, #2196F3 0%, #1976D2 100%)' : '#ccc',
                                     color: 'white',
                                     border: 'none',
-                                    borderRadius: '4px',
+                                    borderRadius: '10px',
                                     cursor: extracting || !showCropTool ? 'not-allowed' : 'pointer',
                                     width: '100%',
-                                    marginBottom: '0.5rem'
+                                    marginBottom: '0.5rem',
+                                    transition: 'all 0.3s ease',
+                                    boxShadow: showCropTool ? '0 2px 8px rgba(33, 150, 243, 0.3)' : 'none'
                                 }}
                             >
                                 {extracting ? 'Generating...' : 'Preview Frames'}
@@ -664,17 +775,20 @@ export default function EditorPage() {
                                 style={{
                                     padding: '1rem 2rem',
                                     fontSize: '1.1rem',
-                                    backgroundColor: (showCropTool || previewFrames.length > 0) ? '#4CAF50' : '#ccc',
+                                    fontWeight: '600',
+                                    background: (showCropTool || previewFrames.length > 0) ? 'linear-gradient(135deg, #4CAF50 0%, #388E3C 100%)' : '#ccc',
                                     color: 'white',
                                     border: 'none',
-                                    borderRadius: '4px',
+                                    borderRadius: '10px',
                                     cursor: extracting || (!showCropTool && previewFrames.length === 0) ? 'not-allowed' : 'pointer',
-                                    width: '100%'
+                                    width: '100%',
+                                    transition: 'all 0.3s ease',
+                                    boxShadow: (showCropTool || previewFrames.length > 0) ? '0 2px 8px rgba(76, 175, 80, 0.3)' : 'none'
                                 }}
                             >
                                 {extracting ? 'Extracting...' :
-                                 previewFrames.length > 0 ? `Extract ${previewFrames.length} Frames to PDF` :
-                                 'Extract to PDF'}
+                                    previewFrames.length > 0 ? `Extract ${previewFrames.length} Frames to PDF` :
+                                        'Extract to PDF'}
                             </button>
                             {!showCropTool && previewFrames.length === 0 && (
                                 <p style={{ fontSize: '0.9rem', color: '#666', marginTop: '0.5rem' }}>
@@ -693,20 +807,38 @@ export default function EditorPage() {
 
             {/* Page-based Preview Section */}
             {showPreview && previewFrames.length > 0 && (
-                <div style={{ marginTop: '2rem', padding: '1.5rem', backgroundColor: '#2c2c2c', borderRadius: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <h2 style={{ color: '#fff', margin: 0 }}>
+                <div style={styles.previewContainer}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h2 style={{ ...styles.sectionTitle, margin: 0 }}>
                             PDF Preview ({previewFrames.length} frames, {Math.ceil(previewFrames.length / framesPerPage)} pages)
                         </h2>
                         <button
                             onClick={() => setShowPreview(false)}
-                            style={{ padding: '0.5rem 1rem', cursor: 'pointer', backgroundColor: '#fff', color: '#000', border: '1px solid #ccc', borderRadius: '4px' }}
+                            style={{
+                                padding: '0.75rem 1.25rem',
+                                fontSize: '0.95rem',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                backgroundColor: '#fff',
+                                color: '#667eea',
+                                border: '2px solid #667eea',
+                                borderRadius: '10px',
+                                transition: 'all 0.3s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#667eea';
+                                e.currentTarget.style.color = '#fff';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = '#fff';
+                                e.currentTarget.style.color = '#667eea';
+                            }}
                         >
                             Close Preview
                         </button>
                     </div>
 
-                    <p style={{ marginBottom: '1.5rem', color: '#ccc' }}>
+                    <p style={{ marginBottom: '1.5rem', color: '#6b7280', fontSize: '0.95rem' }}>
                         Layout: {framesPerPage} frame{framesPerPage > 1 ? 's' : ''} per page (stacked vertically), {frameWidthPercent}% width, {frameGap}px gap
                     </p>
 
@@ -717,7 +849,9 @@ export default function EditorPage() {
                         gap: '2rem',
                         maxHeight: '800px',
                         overflow: 'auto',
-                        padding: '1rem'
+                        padding: '2rem',
+                        background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+                        borderRadius: '12px'
                     }}>
                         {(() => {
                             const pages = [];
@@ -733,9 +867,9 @@ export default function EditorPage() {
                                     <div key={pageNum} style={{
                                         backgroundColor: 'white',
                                         padding: '40px',
-                                        border: '1px solid #888',
-                                        borderRadius: '4px',
-                                        boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
+                                        border: 'none',
+                                        borderRadius: '12px',
+                                        boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
                                         width: '595px', // A4 width (matches backend PDF)
                                         minHeight: '842px', // A4 height - use minHeight to allow scrolling if needed
                                         margin: '0 auto',
@@ -808,17 +942,20 @@ export default function EditorPage() {
                                                             style={{
                                                                 padding: '4px',
                                                                 fontSize: '1rem',
-                                                                backgroundColor: '#ff4444',
+                                                                fontWeight: '600',
+                                                                background: 'linear-gradient(135deg, #ff4444 0%, #cc0000 100%)',
                                                                 color: 'white',
                                                                 border: 'none',
-                                                                borderRadius: '3px',
+                                                                borderRadius: '6px',
                                                                 cursor: 'pointer',
                                                                 width: '24px',
                                                                 height: '24px',
                                                                 display: 'flex',
                                                                 alignItems: 'center',
                                                                 justifyContent: 'center',
-                                                                lineHeight: '1'
+                                                                lineHeight: '1',
+                                                                transition: 'all 0.3s ease',
+                                                                boxShadow: '0 2px 6px rgba(255, 68, 68, 0.3)'
                                                             }}
                                                             title="Delete this frame"
                                                         >
