@@ -5,6 +5,8 @@ export default function LandingPage() {
     const [url, setUrl] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [progress, setProgress] = useState(0);
+    const [statusMessage, setStatusMessage] = useState('');
     const navigate = useNavigate();
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -20,6 +22,8 @@ export default function LandingPage() {
 
         setLoading(true);
         setError('');
+        setProgress(0);
+        setStatusMessage('Starting download...');
 
         try {
             const res = await fetch('http://localhost:8080/api/video/upload', {
@@ -33,16 +37,48 @@ export default function LandingPage() {
             const data = await res.json();
 
             if (!res.ok) {
-                throw new Error(data.error || 'Failed to download video');
+                throw new Error(data.error || 'Failed to start download');
             }
 
-            // Navigate to editor with video data
-            navigate('/editor', { state: { videoData: data } });
+            const taskId = data.taskId;
+
+            // Poll for status
+            const pollInterval = window.setInterval(async () => {
+                try {
+                    const statusRes = await fetch(`http://localhost:8080/api/video/status/${taskId}`);
+                    const statusData = await statusRes.json();
+
+                    if (!statusRes.ok) {
+                        clearInterval(pollInterval);
+                        throw new Error(statusData.error || 'Failed to check status');
+                    }
+
+                    if (statusData.status === 'error') {
+                        clearInterval(pollInterval);
+                        setError(statusData.error || 'Download failed');
+                        setLoading(false);
+                    } else if (statusData.status === 'completed') {
+                        clearInterval(pollInterval);
+                        setProgress(100);
+                        setStatusMessage('Complete!');
+                        // Navigate to editor with video data
+                        navigate('/editor', { state: { videoData: statusData.result } });
+                    } else {
+                        // Update progress
+                        setProgress(statusData.progress || 0);
+                        setStatusMessage(statusData.message || 'Processing...');
+                    }
+                } catch (err) {
+                    clearInterval(pollInterval);
+                    console.error('Polling error:', err);
+                    setError('Failed to check download status');
+                    setLoading(false);
+                }
+            }, 500);
 
         } catch (error) {
             console.error('Error:', error);
             setError(error instanceof Error ? error.message : 'Failed to process video');
-        } finally {
             setLoading(false);
         }
     }
@@ -183,12 +219,41 @@ export default function LandingPage() {
                                     borderRadius: '50%',
                                     animation: 'spin 1s linear infinite'
                                 }}></span>
-                                Processing Video...
+                                {statusMessage || 'Processing Video...'}
                             </span>
                         ) : (
                             'Continue to Editor →'
                         )}
                     </button>
+
+                    {loading && (
+                        <div style={{ marginTop: '0.5rem' }}>
+                            <div style={{
+                                width: '100%',
+                                height: '6px',
+                                backgroundColor: '#f3f4f6',
+                                borderRadius: '3px',
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{
+                                    width: `${progress}%`,
+                                    height: '100%',
+                                    backgroundColor: '#667eea',
+                                    transition: 'width 0.3s ease',
+                                    borderRadius: '3px'
+                                }} />
+                            </div>
+                            <p style={{
+                                textAlign: 'center',
+                                fontSize: '0.85rem',
+                                color: '#6b7280',
+                                marginTop: '0.5rem',
+                                marginBottom: 0
+                            }}>
+                                {Math.round(progress)}%
+                            </p>
+                        </div>
+                    )}
                 </div>
 
                 <style>{`

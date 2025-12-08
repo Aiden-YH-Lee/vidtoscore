@@ -105,6 +105,16 @@ export default function EditorPage() {
         setEndTime(currentMs);
     };
 
+    const handleMeasureInterval = () => {
+        const currentMs = Math.floor(currentTime * 1000);
+        const diff = currentMs - startTime;
+        if (diff >= 100) {
+            setInterval(diff);
+        } else {
+            alert("Interval must be at least 100ms. Please advance the video past the Start Time.");
+        }
+    };
+
     const captureCurrentFrame = () => {
         const video = videoRef.current;
         if (!video) return;
@@ -608,8 +618,8 @@ export default function EditorPage() {
                                 <span style={{ fontSize: '0.85rem', color: '#666' }}>({endTime}ms)</span>
                             </div>
 
-                            <div style={{ marginTop: '0.5rem' }}>
-                                <label>
+                            <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <label style={{ display: 'flex', alignItems: 'center' }}>
                                     Interval (ms):
                                     <input
                                         type="number"
@@ -620,6 +630,13 @@ export default function EditorPage() {
                                         step="100"
                                     />
                                 </label>
+                                <button
+                                    onClick={handleMeasureInterval}
+                                    style={{ ...styles.button, fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
+                                    title="Set interval to the duration between Start Time and current video time"
+                                >
+                                    Measure from Start
+                                </button>
                             </div>
 
                             <p style={{ fontSize: '0.9rem', color: '#666' }}>

@@ -7,14 +7,20 @@ import base64
 import numpy as np
 from PIL import Image
 import io
+import threading
+import uuid
 
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"]}})
+CORS(app, resources={r"/api/*": {"origins": "*",
+     "methods": ["GET", "POST", "OPTIONS"]}})
 
 # Get absolute path to backend directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
+
+# Store download tasks
+download_tasks = {}
 
 
 @app.route('/api/video/upload', methods=['POST'])
@@ -26,43 +32,84 @@ def upload_video():
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
 
-        # Download the video and get title
-        filename, title = download_video(url)
+        task_id = str(uuid.uuid4())
+        download_tasks[task_id] = {
+            'status': 'downloading',
+            'progress': 0,
+            'message': 'Starting download...'
+        }
 
-        # Get video metadata
-        video_path = os.path.join(DOWNLOADS_DIR, filename)
-        video = cv2.VideoCapture(video_path)
+        def download_worker(tid, video_url):
+            try:
+                def progress_hook(d):
+                    if d['status'] == 'downloading':
+                        p = d.get('_percent_str', '0%').replace('%', '')
+                        try:
+                            download_tasks[tid]['progress'] = float(p)
+                            download_tasks[tid]['message'] = f"Downloading: {d.get('_percent_str')}"
+                        except:
+                            pass
+                    elif d['status'] == 'finished':
+                        download_tasks[tid]['progress'] = 99
+                        download_tasks[tid]['message'] = 'Processing video metadata...'
 
-        if not video.isOpened():
-            return jsonify({'error': 'Failed to read video file. Make sure ffmpeg is installed.'}), 500
+                # Download the video and get title
+                filename, title = download_video(
+                    video_url, progress_callback=progress_hook)
 
-        fps = video.get(cv2.CAP_PROP_FPS)
-        frame_count = video.get(cv2.CAP_PROP_FRAME_COUNT)
-        width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                # Get video metadata
+                video_path = os.path.join(DOWNLOADS_DIR, filename)
+                video = cv2.VideoCapture(video_path)
 
-        # Calculate duration, handle edge cases
-        if fps > 0 and frame_count > 0:
-            duration = int(frame_count / fps * 1000)  # in milliseconds
-        else:
-            video.release()
-            return jsonify({'error': 'Invalid video file - could not determine duration'}), 500
+                if not video.isOpened():
+                    raise Exception(
+                        'Failed to read video file. Make sure ffmpeg is installed.')
 
-        video.release()
+                fps = video.get(cv2.CAP_PROP_FPS)
+                frame_count = video.get(cv2.CAP_PROP_FRAME_COUNT)
+                width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        return jsonify({
-            'filename': filename,
-            'title': title,
-            'duration': duration,
-            'width': width,
-            'height': height,
-            'fps': fps
-        })
+                # Calculate duration, handle edge cases
+                if fps > 0 and frame_count > 0:
+                    duration = int(frame_count / fps * 1000)  # in milliseconds
+                else:
+                    video.release()
+                    raise Exception(
+                        'Invalid video file - could not determine duration')
 
-    except VideoDownloadError as e:
-        return jsonify({'error': str(e)}), 500
+                video.release()
+
+                download_tasks[tid]['status'] = 'completed'
+                download_tasks[tid]['progress'] = 100
+                download_tasks[tid]['result'] = {
+                    'filename': filename,
+                    'title': title,
+                    'duration': duration,
+                    'width': width,
+                    'height': height,
+                    'fps': fps
+                }
+
+            except Exception as e:
+                download_tasks[tid]['status'] = 'error'
+                download_tasks[tid]['error'] = str(e)
+
+        thread = threading.Thread(target=download_worker, args=(task_id, url))
+        thread.start()
+
+        return jsonify({'taskId': task_id})
+
     except Exception as e:
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+
+@app.route('/api/video/status/<task_id>', methods=['GET'])
+def get_task_status(task_id):
+    task = download_tasks.get(task_id)
+    if not task:
+        return jsonify({'error': 'Task not found'}), 404
+    return jsonify(task)
 
 
 @app.route('/api/video/extract', methods=['POST'])

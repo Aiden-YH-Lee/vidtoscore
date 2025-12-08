@@ -1,10 +1,10 @@
 import cv2
-import subprocess
 import os
 from pathlib import Path
 import uuid
 from PIL import Image, ImageDraw, ImageFont
 import io
+import yt_dlp
 
 
 class VideoDownloadError(Exception):
@@ -19,38 +19,35 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOADS_DIR = os.path.join(BASE_DIR, download_dir)
 
 
-def download_video(vid_url):
+def download_video(vid_url, progress_callback=None):
     try:
-
         Path(download_dir).mkdir(exist_ok=True)
-
-        # First, get video metadata including title
-        metadata_command = [
-            "yt-dlp",
-            "--print", "%(title)s",
-            "--no-download",
-            vid_url
-        ]
-        result = subprocess.run(metadata_command, capture_output=True, text=True, check=True, encoding='utf-8')
-        video_title = result.stdout.strip()
 
         # Generate unique filename using UUID
         unique_filename = f"{uuid.uuid4()}.mp4"
-        video_file_path = os.path.join(download_dir, unique_filename)
-        command = [
-            "yt-dlp",
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "--merge-output-format", "mp4",
-            "-o", video_file_path,
-            vid_url
-        ]
-        subprocess.run(command, capture_output=True, text=True, check=True)
+
+        def my_hook(d):
+            if progress_callback:
+                progress_callback(d)
+
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'merge_output_format': 'mp4',
+            'outtmpl': os.path.join(download_dir, unique_filename),
+            'progress_hooks': [my_hook],
+            'quiet': True,
+            'no_warnings': True
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(vid_url, download=True)
+            video_title = info.get('title', 'Unknown Title')
 
         return unique_filename, video_title
 
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         raise VideoDownloadError(
-            f"Error downloading video at {vid_url}: {e.stderr}")
+            f"Error downloading video at {vid_url}: {str(e)}")
 
 
 def extract(file_name, x1, y1, x2, y2, start, end, interval):
@@ -72,11 +69,13 @@ def extract(file_name, x1, y1, x2, y2, start, end, interval):
     # Validate crop coordinates
     if x1 < 0 or y1 < 0 or x2 > frame_width or y2 > frame_height:
         video.release()
-        raise ValueError(f"Crop coordinates out of bounds. Video size: {frame_width}x{frame_height}, Crop: ({x1},{y1}) to ({x2},{y2})")
+        raise ValueError(
+            f"Crop coordinates out of bounds. Video size: {frame_width}x{frame_height}, Crop: ({x1},{y1}) to ({x2},{y2})")
 
     if x1 >= x2 or y1 >= y2:
         video.release()
-        raise ValueError(f"Invalid crop coordinates: ({x1},{y1}) to ({x2},{y2})")
+        raise ValueError(
+            f"Invalid crop coordinates: ({x1},{y1}) to ({x2},{y2})")
 
     for time in range(start, end, interval):
         video.set(cv2.CAP_PROP_POS_MSEC, time)
@@ -92,7 +91,8 @@ def extract(file_name, x1, y1, x2, y2, start, end, interval):
     video.release()
 
     if not result:
-        raise ValueError("No frames were extracted. Check your time range and crop coordinates.")
+        raise ValueError(
+            "No frames were extracted. Check your time range and crop coordinates.")
 
     return result
 
@@ -131,14 +131,16 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
     # Scale gap for higher DPI
     scaled_gap = int(gap * DPI_SCALE)
 
-    print(f"Generating PDF at {DPI} DPI: {len(pil_images)} frames, {frames_per_page} per page, {frame_width_percent}% width, {gap}px gap")
+    print(
+        f"Generating PDF at {DPI} DPI: {len(pil_images)} frames, {frames_per_page} per page, {frame_width_percent}% width, {gap}px gap")
     print(f"Page dimensions: {A4_WIDTH}x{A4_HEIGHT} pixels")
     if title:
         print(f"Adding title: {title}")
 
     # Get original frame dimensions
     original_frame_width, original_frame_height = pil_images[0].size
-    print(f"Original frame size: {original_frame_width}x{original_frame_height}")
+    print(
+        f"Original frame size: {original_frame_width}x{original_frame_height}")
 
     # Calculate available space
     available_width = A4_WIDTH - (2 * PAGE_MARGIN)
@@ -149,11 +151,13 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
 
     # Calculate maximum frame dimensions based on two constraints:
     # 1. Width constraint: frames should be frame_width_percent of available width
-    width_constrained_width = int(available_width * (frame_width_percent / 100.0))
+    width_constrained_width = int(
+        available_width * (frame_width_percent / 100.0))
     width_constrained_height = int(width_constrained_width * aspect_ratio)
 
     # 2. Height constraint: frames must fit in available height with gaps
-    max_frame_height = (available_height - (scaled_gap * (frames_per_page - 1))) // frames_per_page
+    max_frame_height = (available_height - (scaled_gap *
+                        (frames_per_page - 1))) // frames_per_page
     height_constrained_height = max_frame_height
     height_constrained_width = int(height_constrained_height / aspect_ratio)
 
@@ -171,19 +175,22 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
 
     print(f"Available space: {available_width}x{available_height}px")
     print(f"Scaled frame size: {target_frame_width}x{target_frame_height}px")
-    print(f"Total content height: {(target_frame_height * frames_per_page) + (scaled_gap * (frames_per_page - 1))}px / {available_height}px")
+    print(
+        f"Total content height: {(target_frame_height * frames_per_page) + (scaled_gap * (frames_per_page - 1))}px / {available_height}px")
 
     # Resize all frames to the target size
     resized_frames = []
     for img in pil_images:
-        resized = img.resize((target_frame_width, target_frame_height), Image.Resampling.LANCZOS)
+        resized = img.resize(
+            (target_frame_width, target_frame_height), Image.Resampling.LANCZOS)
         resized_frames.append(resized)
 
     print(f"Resized {len(resized_frames)} frames")
 
     # Create pages with vertically stacked frames
     pdf_pages = []
-    total_pages = (len(resized_frames) + frames_per_page - 1) // frames_per_page  # Calculate total pages
+    total_pages = (len(resized_frames) + frames_per_page -
+                   1) // frames_per_page  # Calculate total pages
     for page_num, page_start in enumerate(range(0, len(resized_frames), frames_per_page)):
         page_frames = resized_frames[page_start:page_start + frames_per_page]
         print(f"Creating page {page_num + 1} with {len(page_frames)} frames")
@@ -200,7 +207,8 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
                 # Scale font size for higher DPI
                 title_font_size = int(16 * DPI_SCALE)
                 font_paths = [
-                    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",  # macOS - supports all Unicode
+                    # macOS - supports all Unicode
+                    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
                     "/System/Library/Fonts/AppleSDGothicNeo.ttc",  # macOS - Korean support
                     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
                     "/Windows/Fonts/malgun.ttf",  # Windows Korean
@@ -239,7 +247,8 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
             # Use small font for page number, scaled for DPI
             page_num_font_size = int(10 * DPI_SCALE)
             try:
-                page_num_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", page_num_font_size)
+                page_num_font = ImageFont.truetype(
+                    "/System/Library/Fonts/Helvetica.ttc", page_num_font_size)
             except:
                 page_num_font = ImageFont.load_default()
 
@@ -247,8 +256,10 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
             bbox = draw.textbbox((0, 0), page_num_text, font=page_num_font)
             text_width = bbox[2] - bbox[0]
             text_x = (A4_WIDTH - text_width) // 2
-            text_y = A4_HEIGHT - PAGE_MARGIN + int(10 * DPI_SCALE)  # Below the margin
-            draw.text((text_x, text_y), page_num_text, fill='#999999', font=page_num_font)
+            text_y = A4_HEIGHT - PAGE_MARGIN + \
+                int(10 * DPI_SCALE)  # Below the margin
+            draw.text((text_x, text_y), page_num_text,
+                      fill='#999999', font=page_num_font)
         except Exception as e:
             print(f"Warning: Could not add page number: {e}")
 
