@@ -25,16 +25,7 @@ Extract sheet music (scores) or slides from videos into a PDF. The app downloads
 - Flask application.
 - Handles video downloading (`yt-dlp`).
 - Performs frame extraction using OpenCV (`cv2`).
-- Implements "Smart Extraction" logic using image difference thresholds.
 - Generates PDFs using `PIL` (Pillow).
-
-## API Endpoints
-
-- `POST /api/video/upload`: Download a video from a URL.
-- `POST /api/video/extract`: Extract frames and generate PDF (supports both Interval and Smart modes).
-- `POST /api/video/analyze`: Analyze video for "Smart Mode" timestamps without generating PDF (for preview).
-- `POST /api/video/extract-from-frames`: Generate PDF from a list of base64 encoded images (used after preview).
-- `GET /api/video/file/<filename>`: Stream the video file to the frontend.
 
 ## Running the Project
 
@@ -97,11 +88,7 @@ Open your browser at the URL shown (usually `http://localhost:5173`).
 
 1. **Paste URL**: Enter a YouTube URL on the landing page and click "Start".
 2. **Set Time**: Scrub to the start of the score and click "Set Start". Do the same for "Set End".
-3. **Crop**: Click "Capture Frame for Cropping", then draw a box around the music staff.
-4. **Choose Mode**:
-   - **Fixed Interval**: Good for constant tempo. Set the interval (e.g., 5000ms).
-   - **Smart (Scene Detect)**: Best for page turns.
-     - **Threshold**: Lower = more sensitive (detects small changes). Higher = less sensitive.
-     - **Min Cooldown**: Minimum time to wait after a detection (prevents duplicate captures of the same page).
+3. **Set Interval**: Set the time interval (e.g., 5000ms) for frame extraction.
+4. **Crop**: Click "Capture Frame for Cropping", then draw a box around the music staff.
 5. **Preview**: Click "Preview Frames" to see what will be captured. You can delete individual bad frames.
 6. **Extract**: Click "Extract to PDF" to download your sheet music.
