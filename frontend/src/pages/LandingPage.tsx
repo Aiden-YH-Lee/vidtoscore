@@ -25,8 +25,10 @@ export default function LandingPage() {
         setProgress(0);
         setStatusMessage('Starting download...');
 
+        const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
         try {
-            const res = await fetch('http://localhost:8080/api/video/upload', {
+            const res = await fetch(`${API_URL}/api/video/upload`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -45,7 +47,7 @@ export default function LandingPage() {
             // Poll for status
             const pollInterval = window.setInterval(async () => {
                 try {
-                    const statusRes = await fetch(`http://localhost:8080/api/video/status/${taskId}`);
+                    const statusRes = await fetch(`${API_URL}/api/video/status/${taskId}`);
                     const statusData = await statusRes.json();
 
                     if (!statusRes.ok) {

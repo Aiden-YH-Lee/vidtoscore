@@ -11,6 +11,8 @@ import threading
 import uuid
 
 
+import time
+
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*",
      "methods": ["GET", "POST", "OPTIONS"]}})
@@ -19,12 +21,50 @@ CORS(app, resources={r"/api/*": {"origins": "*",
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
 
+# Ensure downloads directory exists
+if not os.path.exists(DOWNLOADS_DIR):
+    os.makedirs(DOWNLOADS_DIR)
+
 # Store download tasks
 download_tasks = {}
 
 
+def cleanup_old_files():
+    """Delete files older than 1 hour to prevent disk fill-up."""
+    try:
+        current_time = time.time()
+        for filename in os.listdir(DOWNLOADS_DIR):
+            file_path = os.path.join(DOWNLOADS_DIR, filename)
+            # If file is older than 1 hour (3600 seconds)
+            if os.path.getmtime(file_path) < current_time - 3600:
+                try:
+                    os.remove(file_path)
+                    print(f"Cleaned up old file: {filename}")
+                except Exception as e:
+                    print(f"Error deleting {filename}: {e}")
+
+        # Also cleanup old tasks from memory
+        keys_to_delete = []
+        for task_id, task in download_tasks.items():
+            # If task is completed/error and older than 1 hour (approx)
+            # Note: We don't have task timestamp, so we'll just clear completed ones if list gets too big
+            if task.get('status') in ['completed', 'error']:
+                keys_to_delete.append(task_id)
+
+        # Only clear tasks if we have too many (prevent memory leak)
+        if len(download_tasks) > 100:
+            for k in keys_to_delete:
+                del download_tasks[k]
+
+    except Exception as e:
+        print(f"Cleanup error: {e}")
+
+
 @app.route('/api/video/upload', methods=['POST'])
 def upload_video():
+    # Run cleanup before starting new download
+    cleanup_old_files()
+
     try:
         data = request.json
         url = data.get('url')

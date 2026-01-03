@@ -70,7 +70,8 @@ export default function EditorPage() {
         return null;
     }
 
-    const videoUrl = `http://localhost:8080/api/video/file/${videoData.filename}`;
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+    const videoUrl = `${API_URL}/api/video/file/${videoData.filename}`;
 
     const formatTime = (ms: number) => {
         const seconds = Math.floor(ms / 1000);
@@ -341,7 +342,7 @@ export default function EditorPage() {
             if (previewFrames.length > 0) {
                 console.log(`Extracting PDF from ${previewFrames.length} previewed frames`);
 
-                response = await fetch('http://localhost:8080/api/video/extract-from-frames', {
+                response = await fetch(`${API_URL}/api/video/extract-from-frames`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -391,7 +392,7 @@ export default function EditorPage() {
                     return;
                 }
 
-                response = await fetch('http://localhost:8080/api/video/extract', {
+                response = await fetch(`${API_URL}/api/video/extract`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
