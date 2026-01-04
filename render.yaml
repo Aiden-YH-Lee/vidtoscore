@@ -13,3 +13,5 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
+      - key: YOUTUBE_COOKIES
+        value: "" # Add your Netscape formatted cookies here if you get bot errors

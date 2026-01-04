@@ -36,12 +36,32 @@ def download_video(vid_url, progress_callback=None):
             'outtmpl': os.path.join(download_dir, unique_filename),
             'progress_hooks': [my_hook],
             'quiet': True,
-            'no_warnings': True
+            'no_warnings': True,
+            # Use Android client to reduce bot detection
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(vid_url, download=True)
-            video_title = info.get('title', 'Unknown Title')
+        # Handle cookies from environment variable
+        cookies_content = os.environ.get('YOUTUBE_COOKIES')
+        cookies_file = None
+        if cookies_content:
+            cookies_file = os.path.join(BASE_DIR, 'cookies.txt')
+            # Write cookies to a temporary file
+            with open(cookies_file, 'w') as f:
+                f.write(cookies_content)
+            ydl_opts['cookiefile'] = cookies_file
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(vid_url, download=True)
+                video_title = info.get('title', 'Unknown Title')
+        finally:
+            # Clean up cookies file if it was created
+            if cookies_file and os.path.exists(cookies_file):
+                try:
+                    os.remove(cookies_file)
+                except:
+                    pass
 
         return unique_filename, video_title
 
