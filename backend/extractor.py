@@ -31,14 +31,12 @@ def download_video(vid_url, progress_callback=None):
                 progress_callback(d)
 
         ydl_opts = {
-            'format': 'best',  # Simpler format selection for compatibility
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'merge_output_format': 'mp4',
             'outtmpl': os.path.join(download_dir, unique_filename),
             'progress_hooks': [my_hook],
             'quiet': True,
-            'no_warnings': True,
-            # Use Android client to reduce bot detection
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
+            'no_warnings': True
         }
 
         # Handle cookies from environment variable
