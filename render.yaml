@@ -10,6 +10,7 @@ services:
       paths:
         - backend/**
         - render.yaml
+    staticPublishPath: ./backend
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0

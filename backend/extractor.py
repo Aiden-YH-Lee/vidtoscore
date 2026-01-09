@@ -221,28 +221,28 @@ def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, tit
         y_offset = PAGE_MARGIN
         if title:
             try:
-                # Try different fonts that support Unicode/CJK characters
+                # Try bundled NotoSansKR first (supports Korean + English)
                 # Scale font size for higher DPI
                 title_font_size = int(16 * DPI_SCALE)
-                font_paths = [
-                    # macOS - supports all Unicode
-                    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-                    "/System/Library/Fonts/AppleSDGothicNeo.ttc",  # macOS - Korean support
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Linux
-                    "/Windows/Fonts/malgun.ttf",  # Windows Korean
-                    "/Windows/Fonts/arial.ttf",  # Windows
-                ]
-                font = None
-                for font_path in font_paths:
-                    try:
-                        font = ImageFont.truetype(font_path, title_font_size)
-                        break
-                    except:
-                        continue
 
-                if font is None:
+                font = None
+                bundled_font_path = os.path.join(
+                    BASE_DIR, 'NotoSansKR-Regular.otf')
+
+                try:
+                    if os.path.exists(bundled_font_path):
+                        font = ImageFont.truetype(
+                            bundled_font_path, title_font_size)
+                    else:
+                        # Fallback for local dev if font not present
+                        font = ImageFont.truetype(
+                            "/System/Library/Fonts/AppleSDGothicNeo.ttc", title_font_size)
+                except:
+                    # Final fallback
                     font = ImageFont.load_default()
-            except:
+
+            except Exception as e:
+                print(f"Font error: {e}")
                 font = ImageFont.load_default()
 
             # Draw title centered at top
