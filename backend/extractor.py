@@ -31,7 +31,7 @@ def download_video(vid_url, progress_callback=None):
                 progress_callback(d)
 
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'best',  # Simpler format selection for compatibility
             'merge_output_format': 'mp4',
             'outtmpl': os.path.join(download_dir, unique_filename),
             'progress_hooks': [my_hook],
