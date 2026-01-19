@@ -33,7 +33,7 @@ def download_video(vid_url, progress_callback=None):
                 progress_callback(d)
 
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best[height<=1080]/best',
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'merge_output_format': 'mp4',
             'outtmpl': output_path,  # Use absolute path
             'progress_hooks': [my_hook],
@@ -46,7 +46,7 @@ def download_video(vid_url, progress_callback=None):
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-us,en;q=0.5',
             },
-            'extractor_retries': 5,
+            'extractor_retries': 3,
             'fragment_retries': 10,
             'file_access_retries': 5,
             'retry_sleep_functions': {'http': lambda n: 5},
