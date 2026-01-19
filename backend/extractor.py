@@ -21,22 +21,39 @@ DOWNLOADS_DIR = os.path.join(BASE_DIR, download_dir)
 
 def download_video(vid_url, progress_callback=None):
     try:
-        Path(download_dir).mkdir(exist_ok=True)
+        # Use absolute path for downloads directory
+        Path(DOWNLOADS_DIR).mkdir(exist_ok=True)
 
         # Generate unique filename using UUID
         unique_filename = f"{uuid.uuid4()}.mp4"
+        output_path = os.path.join(DOWNLOADS_DIR, unique_filename)
 
         def my_hook(d):
             if progress_callback:
                 progress_callback(d)
 
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best[height<=1080]/best',
             'merge_output_format': 'mp4',
-            'outtmpl': os.path.join(download_dir, unique_filename),
+            'outtmpl': output_path,  # Use absolute path
             'progress_hooks': [my_hook],
-            'quiet': True,
-            'no_warnings': True
+            'quiet': False,  # Enable output for debugging
+            'no_warnings': False,
+            'verbose': True,  # More detailed logging
+            # Additional options to help bypass restrictions
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+            },
+            'extractor_retries': 5,
+            'fragment_retries': 10,
+            'file_access_retries': 5,
+            'retry_sleep_functions': {'http': lambda n: 5},
+            'socket_timeout': 60,
+            'retries': 10,
+            'ignoreerrors': False,
+            'extract_flat': False,
         }
 
         # Handle cookies from environment variable
@@ -44,15 +61,36 @@ def download_video(vid_url, progress_callback=None):
         cookies_file = None
         if cookies_content:
             cookies_file = os.path.join(BASE_DIR, 'cookies.txt')
+            # Decode if base64 encoded (in case of multiline issues)
+            try:
+                import base64
+                decoded = base64.b64decode(cookies_content).decode('utf-8')
+                cookies_content = decoded
+                print("[DEBUG] Cookies decoded from base64")
+            except:
+                # Not base64 encoded, use as-is
+                print("[DEBUG] Cookies used as plain text")
+
             # Write cookies to a temporary file
             with open(cookies_file, 'w') as f:
                 f.write(cookies_content)
+
+            # Log cookie file info for debugging
+            cookie_size = os.path.getsize(cookies_file)
+            print(
+                f"[DEBUG] Cookie file created at {cookies_file}, size: {cookie_size} bytes")
+
             ydl_opts['cookiefile'] = cookies_file
+        else:
+            print("[DEBUG] No YOUTUBE_COOKIES environment variable found")
 
         try:
+            print(f"[DEBUG] Starting download for: {vid_url}")
+            print(f"[DEBUG] Output path: {output_path}")
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(vid_url, download=True)
                 video_title = info.get('title', 'Unknown Title')
+                print(f"[DEBUG] Download info extracted, title: {video_title}")
         finally:
             # Clean up cookies file if it was created
             if cookies_file and os.path.exists(cookies_file):
@@ -61,8 +99,46 @@ def download_video(vid_url, progress_callback=None):
                 except:
                     pass
 
+        # Verify the downloaded file exists and is not empty
+        print(f"[DEBUG] Checking for file at: {output_path}")
+
+        if not os.path.exists(output_path):
+            # List what files are in the downloads directory
+            try:
+                files = os.listdir(DOWNLOADS_DIR)
+                print(f"[DEBUG] Files in downloads dir: {files}")
+            except Exception as e:
+                print(f"[DEBUG] Could not list downloads dir: {e}")
+
+            raise VideoDownloadError(
+                f"Download failed: File was not created. YouTube may be blocking this request. Try again later or use a different video.")
+
+        file_size = os.path.getsize(output_path)
+        print(f"[DEBUG] File size: {file_size} bytes")
+
+        if file_size == 0:
+            # Clean up empty file
+            os.remove(output_path)
+            raise VideoDownloadError(
+                f"Download failed: Empty file received. YouTube may be rate-limiting or blocking requests from this server. Please try again in a few minutes.")
+
         return unique_filename, video_title
 
+    except yt_dlp.utils.DownloadError as e:
+        error_msg = str(e)
+        if "Sign in to confirm" in error_msg or "bot" in error_msg.lower():
+            raise VideoDownloadError(
+                "YouTube requires sign-in verification. This video may be age-restricted or YouTube is blocking automated downloads. Try a different video.")
+        elif "Video unavailable" in error_msg:
+            raise VideoDownloadError(
+                "This video is unavailable. It may be private, deleted, or region-restricted.")
+        elif "Private video" in error_msg:
+            raise VideoDownloadError(
+                "This is a private video and cannot be downloaded.")
+        else:
+            raise VideoDownloadError(f"Download failed: {error_msg}")
+    except VideoDownloadError:
+        raise
     except Exception as e:
         raise VideoDownloadError(
             f"Error downloading video at {vid_url}: {str(e)}")
