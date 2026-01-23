@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ReactCrop, { type Crop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
@@ -67,12 +67,91 @@ export default function EditorPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [crop.width, crop.height, frameWidthPercent, frameGap]);
 
-    if (!videoData) {
-        return null;
-    }
+    // Keyboard shortcuts for video navigation
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            const video = videoRef.current;
+            if (!video || !videoData) return;
+
+            // Ignore if user is typing in an input field
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                return;
+            }
+
+            const frameDuration = 1 / videoData.fps; // Duration of one frame in seconds
+            const smallJump = 1; // 1 second for Shift+Arrow
+            const largeJump = 5; // 5 seconds for regular Arrow
+
+            switch (e.key) {
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        // Frame-by-frame backward
+                        video.currentTime = Math.max(0, video.currentTime - frameDuration);
+                    } else if (e.metaKey || e.ctrlKey) {
+                        // 1 second backward
+                        video.currentTime = Math.max(0, video.currentTime - smallJump);
+                    } else {
+                        // 5 seconds backward
+                        video.currentTime = Math.max(0, video.currentTime - largeJump);
+                    }
+                    break;
+
+                case 'ArrowRight':
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        // Frame-by-frame forward
+                        video.currentTime = Math.min(videoData.duration / 1000, video.currentTime + frameDuration);
+                    } else if (e.metaKey || e.ctrlKey) {
+                        // 1 second forward
+                        video.currentTime = Math.min(videoData.duration / 1000, video.currentTime + smallJump);
+                    } else {
+                        // 5 seconds forward
+                        video.currentTime = Math.min(videoData.duration / 1000, video.currentTime + largeJump);
+                    }
+                    break;
+
+                case ' ':
+                    e.preventDefault();
+                    if (video.paused) {
+                        video.play();
+                    } else {
+                        video.pause();
+                    }
+                    break;
+
+                case 's':
+                    if (!e.metaKey && !e.ctrlKey) { // Avoid interfering with Cmd+S/Ctrl+S
+                        e.preventDefault();
+                        const currentMs = Math.floor(video.currentTime * 1000);
+                        setStartTime(currentMs);
+                    }
+                    break;
+
+                case 'e':
+                    if (!e.metaKey && !e.ctrlKey) {
+                        e.preventDefault();
+                        const currentMs = Math.floor(video.currentTime * 1000);
+                        setEndTime(currentMs);
+                    }
+                    break;
+
+                case 'c':
+                    if (!e.metaKey && !e.ctrlKey) {
+                        e.preventDefault();
+                        // Trigger capture - we'll need to use a state or ref for this
+                        video.dispatchEvent(new CustomEvent('captureFrame'));
+                    }
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [videoData]);
 
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
-    const videoUrl = `${API_URL}/api/video/file/${videoData.filename}`;
+    const videoUrl = videoData ? `${API_URL}/api/video/file/${videoData.filename}` : '';
 
     const formatTime = (ms: number) => {
         const seconds = Math.floor(ms / 1000);
@@ -117,7 +196,7 @@ export default function EditorPage() {
         }
     };
 
-    const captureCurrentFrame = () => {
+    const captureCurrentFrame = useCallback(() => {
         const video = videoRef.current;
         if (!video) return;
 
@@ -139,7 +218,7 @@ export default function EditorPage() {
 
         // Otherwise capture current frame immediately
         performCapture();
-    };
+    }, [showCropTool, videoData]);
 
     const performCapture = () => {
         const video = videoRef.current;
@@ -172,6 +251,19 @@ export default function EditorPage() {
             });
         }
     };
+
+    // Listen for capture frame event from keyboard shortcut
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        const handleCaptureEvent = () => {
+            captureCurrentFrame();
+        };
+
+        video.addEventListener('captureFrame', handleCaptureEvent);
+        return () => video.removeEventListener('captureFrame', handleCaptureEvent);
+    }, [captureCurrentFrame]);
 
     // Calculate scale ratio when image is displayed
     const handleImageLoad = () => {
@@ -353,7 +445,7 @@ export default function EditorPage() {
                         framesPerPage: framesPerPage,
                         frameWidthPercent: frameWidthPercent,
                         gap: frameGap,
-                        title: videoData.title
+                        title: videoData!.title
                     }),
                 });
             } else {
@@ -399,7 +491,7 @@ export default function EditorPage() {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        filename: videoData.filename,
+                        filename: videoData!.filename,
                         x1,
                         y1,
                         x2,
@@ -425,7 +517,7 @@ export default function EditorPage() {
             const a = document.createElement('a');
             a.href = url;
             // Use video title as filename, sanitized for file system
-            const sanitizedTitle = videoData.title
+            const sanitizedTitle = videoData!.title
                 .replace(/[<>:"/\\|?*]/g, '') // Remove invalid filename characters
                 .replace(/\s+/g, '_')          // Replace spaces with underscores
                 .substring(0, 100);            // Limit length
@@ -537,6 +629,10 @@ export default function EditorPage() {
         } as React.CSSProperties
     };
 
+    if (!videoData) {
+        return null;
+    }
+
     return (
         <div style={styles.container}>
             <div style={styles.header}>
@@ -581,9 +677,58 @@ export default function EditorPage() {
                         <p style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
                             {videoData.title}
                         </p>
-                        <p>Current Time: {formatTime(currentTime * 1000)}</p>
+
+                        {/* Detailed time display */}
+                        <div style={{
+                            background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)',
+                            padding: '1rem',
+                            borderRadius: '8px',
+                            marginBottom: '0.75rem',
+                            border: '1px solid #e5e7eb'
+                        }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.9rem' }}>
+                                <div>
+                                    <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>Current Time:</span>
+                                    <div style={{ fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: '600', color: '#1f2937' }}>
+                                        {formatTime(currentTime * 1000)}.{Math.floor((currentTime * 1000) % 1000).toString().padStart(3, '0')}
+                                    </div>
+                                </div>
+                                <div>
+                                    <span style={{ color: '#6b7280', fontSize: '0.8rem' }}>Frame:</span>
+                                    <div style={{ fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: '600', color: '#1f2937' }}>
+                                        {Math.floor(currentTime * videoData.fps)} / {Math.floor((videoData.duration / 1000) * videoData.fps)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <p>Duration: {formatTime(videoData.duration)}</p>
                         <p>Resolution: {videoData.width} x {videoData.height}</p>
+                        <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>
+                            FPS: {videoData.fps.toFixed(2)} ({(1000 / videoData.fps).toFixed(0)}ms per frame)
+                        </p>
+                    </div>
+
+                    {/* Keyboard Shortcuts Help */}
+                    <div style={{
+                        marginTop: '1.5rem',
+                        padding: '1rem',
+                        background: 'linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%)',
+                        borderRadius: '12px',
+                        border: '1px solid #d1d9ff'
+                    }}>
+                        <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', fontWeight: '600', color: '#4338ca' }}>
+                            ⌨️ Keyboard Shortcuts
+                        </h4>
+                        <div style={{ fontSize: '0.8rem', color: '#4b5563', display: 'grid', gap: '0.4rem' }}>
+                            <div><kbd style={{ background: 'white', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '0.75rem' }}>Space</kbd> Play/Pause</div>
+                            <div><kbd style={{ background: 'white', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '0.75rem' }}>←/→</kbd> Jump 5 seconds</div>
+                            <div><kbd style={{ background: 'white', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '0.75rem' }}>Cmd/Ctrl + ←/→</kbd> Jump 1 second</div>
+                            <div><kbd style={{ background: 'white', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '0.75rem' }}>Shift + ←/→</kbd> Frame by frame</div>
+                            <div><kbd style={{ background: 'white', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '0.75rem' }}>S</kbd> Set Start Time</div>
+                            <div><kbd style={{ background: 'white', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '0.75rem' }}>E</kbd> Set End Time</div>
+                            <div><kbd style={{ background: 'white', padding: '0.15rem 0.4rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '0.75rem' }}>C</kbd> Capture Frame</div>
+                        </div>
                     </div>
                 </div>
 
