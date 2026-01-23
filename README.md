@@ -29,13 +29,47 @@ Extract sheet music (scores) or slides from videos into a PDF. The app downloads
 
 ## Running the Project
 
-### Prerequisites
+### Option 1: Using Docker (Recommended)
+
+The easiest way to run the project is with Docker Compose:
+
+**Prerequisites:**
+
+- Docker and Docker Compose installed
+
+**Steps:**
+
+1. Clone the repository and navigate to the project directory:
+
+```bash
+cd vidtoscore
+```
+
+1. Build and run the containers:
+
+```bash
+docker compose up --build --watch
+```
+
+1. Access the application:
+   - Frontend: <http://localhost:5173>
+   - Backend API: <http://localhost:8080>
+
+To stop the containers, press `Ctrl+C` or run:
+
+```bash
+docker compose down
+```
+
+### Option 2: Running Locally (Manual Setup)
+
+**Prerequisites:**
 
 - Python 3.8+
 - Node.js 16+
 - `ffmpeg` (required for `yt-dlp` and video processing)
 
-### 1. Backend Setup
+#### 1. Backend Setup
 
 Navigate to the `backend` directory:
 
@@ -59,10 +93,10 @@ pip install -r requirements.txt
 Run the Flask application (runs on port 8080):
 
 ```bash
-flask run --port 8080
+flask run --host=0.0.0.0 --port=8080
 ```
 
-### 2. Frontend Setup
+#### 2. Frontend Setup
 
 Navigate to the `frontend` directory:
 

@@ -48,6 +48,7 @@ export default function EditorPage() {
     }
     const [previewFrames, setPreviewFrames] = useState<FrameData[]>([]);
     const [showPreview, setShowPreview] = useState(false);
+    const [extractedFrameDimensions, setExtractedFrameDimensions] = useState({ width: 1, height: 1 });
     const [framesPerPage, setFramesPerPage] = useState(3); // Default: fit 3 frames per page
     const [frameGap, setFrameGap] = useState(10); // Gap between frames in pixels
     const [frameWidthPercent, setFrameWidthPercent] = useState(95); // Frame width as % of page width
@@ -199,10 +200,9 @@ export default function EditorPage() {
         const A4_HEIGHT = 842;
         const PAGE_MARGIN = 40;
         const TITLE_HEIGHT = 30;
-        const PAGE_NUMBER_HEIGHT = 20; // Reserve space for page number at bottom
 
         const availableWidth = A4_WIDTH - (2 * PAGE_MARGIN);
-        const availableHeight = A4_HEIGHT - (2 * PAGE_MARGIN) - TITLE_HEIGHT - PAGE_NUMBER_HEIGHT;
+        const availableHeight = A4_HEIGHT - (2 * PAGE_MARGIN) - TITLE_HEIGHT; // Backend doesn't subtract page number space
 
         const aspectRatio = crop.height / crop.width;
 
@@ -321,6 +321,7 @@ export default function EditorPage() {
             video.currentTime = originalTime;
 
             console.log(`Extracted ${frames.length} frames`);
+            setExtractedFrameDimensions({ width: finalWidth, height: finalHeight });
             setPreviewFrames(frames);
             setShowPreview(true);
             setExtracting(false);
@@ -423,7 +424,12 @@ export default function EditorPage() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'sheet_music.pdf';
+            // Use video title as filename, sanitized for file system
+            const sanitizedTitle = videoData.title
+                .replace(/[<>:"/\\|?*]/g, '') // Remove invalid filename characters
+                .replace(/\s+/g, '_')          // Replace spaces with underscores
+                .substring(0, 100);            // Limit length
+            a.download = `${sanitizedTitle || 'sheet_music'}.pdf`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -875,6 +881,38 @@ export default function EditorPage() {
                             const pages = [];
                             const totalPages = Math.ceil(previewFrames.length / framesPerPage);
 
+                            // Calculate frame dimensions like the backend does
+                            const A4_WIDTH = 595;
+                            const A4_HEIGHT = 842;
+                            const PAGE_MARGIN = 40;
+                            // Title takes 30px + 15px margin = 45px total in the preview layout
+                            const TITLE_HEIGHT = videoData.title ? 45 : 0;
+
+                            const availableWidth = A4_WIDTH - (2 * PAGE_MARGIN);
+                            const availableHeight = A4_HEIGHT - (2 * PAGE_MARGIN) - TITLE_HEIGHT;
+
+                            // Get aspect ratio from actual extracted frame dimensions
+                            const aspectRatio = extractedFrameDimensions.height / extractedFrameDimensions.width;
+
+                            // Width constraint
+                            const widthConstrainedWidth = availableWidth * (frameWidthPercent / 100);
+                            const widthConstrainedHeight = widthConstrainedWidth * aspectRatio;
+
+                            // Height constraint
+                            const maxFrameHeight = (availableHeight - (frameGap * (framesPerPage - 1))) / framesPerPage;
+
+                            // Use the smaller of the two constraints
+                            let targetFrameWidth: number;
+                            let targetFrameHeight: number;
+
+                            if (widthConstrainedHeight * framesPerPage + (frameGap * (framesPerPage - 1)) <= availableHeight) {
+                                targetFrameWidth = widthConstrainedWidth;
+                                targetFrameHeight = widthConstrainedHeight;
+                            } else {
+                                targetFrameHeight = maxFrameHeight;
+                                targetFrameWidth = targetFrameHeight / aspectRatio;
+                            }
+
                             for (let pageNum = 0; pageNum < totalPages; pageNum++) {
                                 const pageFrames = previewFrames.slice(
                                     pageNum * framesPerPage,
@@ -883,103 +921,110 @@ export default function EditorPage() {
 
                                 pages.push(
                                     <div key={pageNum} style={{
-                                        backgroundColor: 'white',
-                                        padding: '40px',
-                                        border: 'none',
-                                        borderRadius: '12px',
-                                        boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-                                        width: '595px', // A4 width (matches backend PDF)
-                                        minHeight: '842px', // A4 height - use minHeight to allow scrolling if needed
-                                        margin: '0 auto',
-                                        position: 'relative'
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        justifyContent: 'center',
+                                        gap: '20px'
                                     }}>
-                                        {/* Title (if present) */}
-                                        {videoData.title && (
-                                            <div style={{
-                                                fontSize: '1rem',
-                                                color: '#000',
-                                                marginBottom: '15px',
-                                                textAlign: 'center',
-                                                fontWeight: 'bold'
-                                            }}>
-                                                {videoData.title}
-                                            </div>
-                                        )}
-
-                                        {/* Page number at bottom - absolute positioned to not affect layout */}
+                                        {/* A4 Page */}
                                         <div style={{
-                                            position: 'absolute',
-                                            bottom: '10px',
-                                            left: '0',
-                                            right: '0',
-                                            fontSize: '0.75rem',
-                                            color: '#999',
-                                            textAlign: 'center'
+                                            backgroundColor: 'white',
+                                            padding: '40px',
+                                            border: 'none',
+                                            borderRadius: '12px',
+                                            boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
+                                            width: '595px', // A4 width (matches backend PDF)
+                                            minHeight: '842px', // A4 height
+                                            position: 'relative',
+                                            boxSizing: 'border-box'
                                         }}>
-                                            {pageNum + 1} / {totalPages}
+                                            {/* Title (if present) */}
+                                            {videoData.title && (
+                                                <div style={{
+                                                    fontSize: '1rem',
+                                                    color: '#000',
+                                                    marginBottom: '15px',
+                                                    textAlign: 'center',
+                                                    fontWeight: 'bold'
+                                                }}>
+                                                    {videoData.title}
+                                                </div>
+                                            )}
+
+                                            {/* Page number at bottom - absolute positioned to not affect layout */}
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: '12px',
+                                                left: '0',
+                                                right: '0',
+                                                fontSize: '16px',
+                                                fontWeight: '600',
+                                                color: '#555',
+                                                textAlign: 'center'
+                                            }}>
+                                                {pageNum + 1} / {totalPages}
+                                            </div>
+
+                                            {/* Vertically stacked frames */}
+                                            <div style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: `${frameGap}px`,
+                                                alignItems: 'center'
+                                            }}>
+                                                {pageFrames.map((frame, frameIdx) => (
+                                                    <div key={frame.id} style={{
+                                                        width: `${targetFrameWidth}px`,
+                                                        border: '1px solid #ddd',
+                                                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                                                    }}>
+                                                        <img
+                                                            src={frame.data}
+                                                            alt={`Frame ${pageNum * framesPerPage + frameIdx + 1}`}
+                                                            style={{ width: '100%', height: 'auto', display: 'block' }}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
 
-                                        {/* Vertically stacked frames */}
+                                        {/* Side controls - outside the A4 page */}
                                         <div style={{
                                             display: 'flex',
                                             flexDirection: 'column',
-                                            gap: `${frameGap}px`,
-                                            alignItems: 'center'
+                                            gap: '10px',
+                                            paddingTop: videoData.title ? '95px' : '50px',
+                                            minWidth: '80px'
                                         }}>
                                             {pageFrames.map((frame, frameIdx) => (
                                                 <div key={frame.id} style={{
-                                                    width: `${frameWidthPercent}%`,
-                                                    border: '1px solid #ddd',
-                                                    overflow: 'visible',
-                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                                                    position: 'relative',
-                                                    marginRight: '50px' // Add space for side controls
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '4px',
+                                                    height: `${targetFrameHeight + frameGap}px`,
+                                                    fontSize: '0.75rem',
+                                                    color: '#666'
                                                 }}>
-                                                    <img
-                                                        src={frame.data}
-                                                        alt={`Frame ${pageNum * framesPerPage + frameIdx + 1}`}
-                                                        style={{ width: '100%', height: 'auto', display: 'block' }}
-                                                    />
-                                                    {/* Info positioned to the right side of the frame */}
-                                                    <div style={{
-                                                        position: 'absolute',
-                                                        top: '0',
-                                                        left: '100%',
-                                                        marginLeft: '8px',
-                                                        fontSize: '0.65rem',
-                                                        color: '#666',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        gap: '4px',
-                                                        whiteSpace: 'nowrap'
-                                                    }}>
-                                                        <span>#{pageNum * framesPerPage + frameIdx + 1}</span>
-                                                        <span>{formatTime(frame.timestamp)}</span>
-                                                        <button
-                                                            onClick={() => handleDeleteFrame(frame.id)}
-                                                            style={{
-                                                                padding: '4px',
-                                                                fontSize: '1rem',
-                                                                fontWeight: '600',
-                                                                background: 'linear-gradient(135deg, #ff4444 0%, #cc0000 100%)',
-                                                                color: 'white',
-                                                                border: 'none',
-                                                                borderRadius: '6px',
-                                                                cursor: 'pointer',
-                                                                width: '24px',
-                                                                height: '24px',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                lineHeight: '1',
-                                                                transition: 'all 0.3s ease',
-                                                                boxShadow: '0 2px 6px rgba(255, 68, 68, 0.3)'
-                                                            }}
-                                                            title="Delete this frame"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </div>
+                                                    <span style={{ fontWeight: '600' }}>#{pageNum * framesPerPage + frameIdx + 1}</span>
+                                                    <span>{formatTime(frame.timestamp)}</span>
+                                                    <button
+                                                        onClick={() => handleDeleteFrame(frame.id)}
+                                                        style={{
+                                                            padding: '4px 8px',
+                                                            fontSize: '0.75rem',
+                                                            fontWeight: '600',
+                                                            background: 'linear-gradient(135deg, #ff4444 0%, #cc0000 100%)',
+                                                            color: 'white',
+                                                            border: 'none',
+                                                            borderRadius: '6px',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.3s ease',
+                                                            boxShadow: '0 2px 6px rgba(255, 68, 68, 0.3)'
+                                                        }}
+                                                        title="Delete this frame"
+                                                    >
+                                                        Delete
+                                                    </button>
                                                 </div>
                                             ))}
                                         </div>
