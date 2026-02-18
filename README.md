@@ -1,6 +1,12 @@
 # vidtoscore
 
+**Notice**: Unfortunately youtube blocks requests coming from deployed servers, so the deployed website does not work. You can clone the repo and run it locally. If you encounter yt-dlp related issues, it is probably this: https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp
+
 Extract sheet music (scores) or slides from videos into a PDF. The app downloads a video (e.g. from YouTube), allows you to select a crop region and time range, and exports the extracted frames into a high-quality PDF.
+
+## Demo
+![3479F270-7C0F-460E-9C5D-CD8FD7E7D99A_1_206_a](https://github.com/user-attachments/assets/bf1ec399-15a0-4346-89eb-1e36d0ac3465)
+
 
 ## Features
 
