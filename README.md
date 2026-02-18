@@ -5,7 +5,10 @@
 Extract sheet music (scores) or slides from videos into a PDF. The app downloads a video (e.g. from YouTube), allows you to select a crop region and time range, and exports the extracted frames into a high-quality PDF.
 
 ## Demo
-![3479F270-7C0F-460E-9C5D-CD8FD7E7D99A_1_206_a](https://github.com/user-attachments/assets/bf1ec399-15a0-4346-89eb-1e36d0ac3465)
+
+
+https://github.com/user-attachments/assets/2e1999bd-2ada-4627-9feb-e22709a91cd7
+
 
 
 ## Features
