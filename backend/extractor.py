@@ -191,6 +191,117 @@ def extract(file_name, x1, y1, x2, y2, start, end, interval):
     return result
 
 
+def detect_score_changes(file_name, x1, y1, x2, y2, start, end, threshold_percent=5.0):
+    """Scan [start, end) for distinct score/slide states instead of sampling on a fixed clock.
+
+    Reads every frame sequentially (cheap - no per-frame seeking), diffs the cropped
+    region's grayscale pixels against the last captured frame, and only captures a new
+    frame once the region has settled into a new stable state (a couple of consecutive
+    low-diff frames). This is what keeps a mid-page-turn blur from being captured and
+    keeps a static stretch from producing duplicate frames.
+    """
+    video_file_path = os.path.join(DOWNLOADS_DIR, file_name)
+
+    if not os.path.exists(video_file_path):
+        raise FileNotFoundError(f"Video file not found: {video_file_path}")
+
+    video = cv2.VideoCapture(video_file_path)
+
+    if not video.isOpened():
+        raise ValueError("Failed to open video file")
+
+    frame_width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    if x1 < 0 or y1 < 0 or x2 > frame_width or y2 > frame_height:
+        video.release()
+        raise ValueError(
+            f"Crop coordinates out of bounds. Video size: {frame_width}x{frame_height}, Crop: ({x1},{y1}) to ({x2},{y2})")
+
+    if x1 >= x2 or y1 >= y2:
+        video.release()
+        raise ValueError(
+            f"Invalid crop coordinates: ({x1},{y1}) to ({x2},{y2})")
+
+    PIXEL_DIFF_THRESHOLD = 30  # per-pixel grayscale delta to count as "changed"
+    SETTLE_RATIO = 0.01        # frame-to-frame diff ratio below this counts as "stable"
+    SETTLE_FRAMES = 2          # consecutive stable frames required before capturing
+
+    def crop_gray(img):
+        cropped = img[y1:y2, x1:x2]
+        gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
+        return cropped, gray
+
+    def diff_ratio(a, b):
+        diff = cv2.absdiff(a, b)
+        _, mask = cv2.threshold(diff, PIXEL_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
+        return cv2.countNonZero(mask) / mask.size
+
+    video.set(cv2.CAP_PROP_POS_MSEC, start)
+
+    result = []
+    last_kept_gray = None
+    prev_gray = None
+    in_transition = False
+    stable_streak = 0
+    last_seen_time = start
+    last_seen_frame = None
+
+    while True:
+        if video.get(cv2.CAP_PROP_POS_MSEC) >= end:
+            break
+
+        success, img = video.read()
+        if not success or img is None:
+            break
+
+        cropped, gray = crop_gray(img)
+        if cropped.size == 0:
+            continue
+
+        time_ms = int(video.get(cv2.CAP_PROP_POS_MSEC))
+        last_seen_time = time_ms
+        last_seen_frame = cropped
+
+        if last_kept_gray is None:
+            # Always keep the first visible frame as the baseline.
+            result.append((time_ms, cropped))
+            last_kept_gray = gray
+            prev_gray = gray
+            continue
+
+        if not in_transition:
+            if diff_ratio(gray, last_kept_gray) * 100 > threshold_percent:
+                in_transition = True
+                stable_streak = 0
+        else:
+            if diff_ratio(gray, prev_gray) < SETTLE_RATIO:
+                stable_streak += 1
+            else:
+                stable_streak = 0
+
+            if stable_streak >= SETTLE_FRAMES:
+                result.append((time_ms, cropped))
+                last_kept_gray = gray
+                in_transition = False
+                stable_streak = 0
+
+        prev_gray = gray
+
+    video.release()
+
+    # Capture whatever was on screen at the end, even if it never "settled"
+    # (e.g. the video ends mid-transition) - otherwise the last line is lost.
+    if in_transition and last_seen_frame is not None:
+        result.append((last_seen_time, last_seen_frame))
+
+    if not result:
+        raise ValueError(
+            "No frames were detected. Check your time range and crop coordinates.")
+
+    return result
+
+
 def frames_to_pdf(frames, frames_per_page=1, frame_width_percent=95, gap=10, title=None):
     """Convert list of OpenCV frames to PDF bytes with layout options."""
     if not frames:

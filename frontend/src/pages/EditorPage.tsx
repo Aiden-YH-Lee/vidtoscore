@@ -21,7 +21,7 @@ export default function EditorPage() {
 
     const [startTime, setStartTime] = useState(0);
     const [endTime, setEndTime] = useState(0);
-    const [interval, setInterval] = useState(1000);
+    const [sensitivity, setSensitivity] = useState(5); // % of crop that must change to count as a new page
     const [currentTime, setCurrentTime] = useState(0);
 
     const [crop, setCrop] = useState<Crop>({
@@ -184,16 +184,6 @@ export default function EditorPage() {
     const handleSetEnd = () => {
         const currentMs = Math.floor(currentTime * 1000);
         setEndTime(currentMs);
-    };
-
-    const handleMeasureInterval = () => {
-        const currentMs = Math.floor(currentTime * 1000);
-        const diff = currentMs - startTime;
-        if (diff >= 100) {
-            setInterval(diff);
-        } else {
-            alert("Interval must be at least 100ms. Please advance the video past the Start Time.");
-        }
     };
 
     const captureCurrentFrame = useCallback(() => {
@@ -366,53 +356,35 @@ export default function EditorPage() {
             console.log('Crop (displayed):', crop.x, crop.y, crop.width, crop.height);
             console.log('Scale factors:', scaleX, scaleY);
             console.log('Crop (natural):', x1, y1, finalWidth, finalHeight);
-            console.log('Extracting frames with time:', startTime, 'to', endTime, 'interval', interval);
+            console.log('Detecting score changes from', startTime, 'to', endTime, 'sensitivity', sensitivity);
 
-            const frames: FrameData[] = [];
-            const canvas = document.createElement('canvas');
-            canvas.width = finalWidth;
-            canvas.height = finalHeight;
-            const ctx = canvas.getContext('2d');
+            const response = await fetch(`${API_URL}/api/video/detect-frames`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: videoData!.filename,
+                    x1, y1, x2, y2,
+                    start: startTime,
+                    end: endTime,
+                    sensitivity,
+                }),
+            });
 
-            if (!ctx) {
-                setError('Failed to create canvas context');
-                setExtracting(false);
-                return;
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error || 'Detection failed');
             }
 
-            const originalTime = video.currentTime;
+            const data = await response.json();
+            const frames: FrameData[] = data.frames.map(
+                (f: { timestamp: number; data: string }, idx: number) => ({
+                    id: idx,
+                    data: f.data,
+                    timestamp: f.timestamp,
+                })
+            );
 
-            // Extract frames
-            let frameId = 0;
-            for (let time = startTime; time < endTime; time += interval) {
-                await new Promise<void>((resolve) => {
-                    const seekHandler = () => {
-                        try {
-                            // Draw cropped region
-                            ctx.drawImage(
-                                video,
-                                x1, y1, finalWidth, finalHeight,  // source
-                                0, 0, finalWidth, finalHeight      // destination
-                            );
-                            const dataUrl = canvas.toDataURL('image/png');
-                            frames.push({ id: frameId++, data: dataUrl, timestamp: time });
-                            console.log(`Extracted frame ${frameId} at ${time}ms`);
-                        } catch (e) {
-                            console.error('Error drawing frame:', e);
-                        }
-                        video.removeEventListener('seeked', seekHandler);
-                        resolve();
-                    };
-
-                    video.addEventListener('seeked', seekHandler);
-                    video.currentTime = time / 1000;
-                });
-            }
-
-            // Restore original time
-            video.currentTime = originalTime;
-
-            console.log(`Extracted ${frames.length} frames`);
+            console.log(`Detected ${frames.length} distinct frames`);
             setExtractedFrameDimensions({ width: finalWidth, height: finalHeight });
             setPreviewFrames(frames);
             setShowPreview(true);
@@ -429,82 +401,27 @@ export default function EditorPage() {
         setError('');
 
         try {
-            let response;
-
-            // If we have preview frames, use them directly
-            if (previewFrames.length > 0) {
-                console.log(`Extracting PDF from ${previewFrames.length} previewed frames`);
-
-                response = await fetch(`${API_URL}/api/video/extract-from-frames`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        frames: previewFrames.map(f => f.data),
-                        framesPerPage: framesPerPage,
-                        frameWidthPercent: frameWidthPercent,
-                        gap: frameGap,
-                        title: videoData!.title
-                    }),
-                });
-            } else {
-                // Fall back to extracting from video (old method)
-                console.log('No preview frames available, extracting from video');
-
-                if (startTime >= endTime) {
-                    setError('End time must be after start time');
-                    setExtracting(false);
-                    return;
-                }
-
-                if (interval <= 0) {
-                    setError('Interval must be greater than 0');
-                    setExtracting(false);
-                    return;
-                }
-
-                if (!crop.width || !crop.height) {
-                    setError('Please select a crop region');
-                    setExtracting(false);
-                    return;
-                }
-
-                // Scale crop coordinates from displayed image to natural image size
-                const scaleX = capturedImageDimensions.natural.width / capturedImageDimensions.displayed.width;
-                const scaleY = capturedImageDimensions.natural.height / capturedImageDimensions.displayed.height;
-
-                const x1 = Math.max(0, Math.round(crop.x * scaleX));
-                const y1 = Math.max(0, Math.round(crop.y * scaleY));
-                const x2 = Math.min(videoDimensions.width, Math.round((crop.x + (crop.width || 0)) * scaleX));
-                const y2 = Math.min(videoDimensions.height, Math.round((crop.y + (crop.height || 0)) * scaleY));
-
-                if (x1 >= x2 || y1 >= y2) {
-                    setError('Invalid crop region. Please redraw the crop area.');
-                    setExtracting(false);
-                    return;
-                }
-
-                response = await fetch(`${API_URL}/api/video/extract`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        filename: videoData!.filename,
-                        x1,
-                        y1,
-                        x2,
-                        y2,
-                        start: startTime,
-                        end: endTime,
-                        interval: interval,
-                        framesPerPage: framesPerPage,
-                        frameWidthPercent: frameWidthPercent,
-                        gap: frameGap
-                    }),
-                });
+            if (previewFrames.length === 0) {
+                setError('Please preview frames first');
+                setExtracting(false);
+                return;
             }
+
+            console.log(`Extracting PDF from ${previewFrames.length} previewed frames`);
+
+            const response = await fetch(`${API_URL}/api/video/extract-from-frames`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    frames: previewFrames.map(f => f.data),
+                    framesPerPage: framesPerPage,
+                    frameWidthPercent: frameWidthPercent,
+                    gap: frameGap,
+                    title: videoData!.title
+                }),
+            });
 
             if (!response.ok) {
                 const data = await response.json();
@@ -534,8 +451,6 @@ export default function EditorPage() {
             setExtracting(false);
         }
     };
-
-    const estimatedFrames = Math.ceil((endTime - startTime) / interval);
 
     const styles = {
         container: {
@@ -770,29 +685,26 @@ export default function EditorPage() {
                                 <span style={{ fontSize: '0.85rem', color: '#666' }}>({endTime}ms)</span>
                             </div>
 
-                            <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <label style={{ display: 'flex', alignItems: 'center' }}>
-                                    Interval (ms):
-                                    <input
-                                        type="number"
-                                        value={interval}
-                                        onChange={(e) => setInterval(Number(e.target.value))}
-                                        style={{ ...styles.input, marginLeft: '0.5rem', width: '100px', padding: '0.5rem' }}
-                                        min="100"
-                                        step="100"
-                                    />
+                            <div style={{ marginTop: '0.75rem' }}>
+                                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                                    Change sensitivity: {sensitivity}% {' '}
+                                    <span style={{ fontSize: '0.8rem', color: '#666' }}>
+                                        (lower catches subtler changes, higher ignores small flicker)
+                                    </span>
                                 </label>
-                                <button
-                                    onClick={handleMeasureInterval}
-                                    style={{ ...styles.button, fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
-                                    title="Set interval to the duration between Start Time and current video time"
-                                >
-                                    Measure from Start
-                                </button>
+                                <input
+                                    type="range"
+                                    value={sensitivity}
+                                    onChange={(e) => setSensitivity(Number(e.target.value))}
+                                    style={{ width: '100%' }}
+                                    min="1"
+                                    max="30"
+                                    step="1"
+                                />
                             </div>
 
                             <p style={{ fontSize: '0.9rem', color: '#666' }}>
-                                Estimated frames: {estimatedFrames}
+                                Frames are detected automatically by watching the crop region for changes - no need to guess an interval.
                             </p>
                         </div>
 
@@ -940,19 +852,19 @@ export default function EditorPage() {
 
                             <button
                                 onClick={handleExtract}
-                                disabled={extracting || (!showCropTool && previewFrames.length === 0)}
+                                disabled={extracting || previewFrames.length === 0}
                                 style={{
                                     padding: '1rem 2rem',
                                     fontSize: '1.1rem',
                                     fontWeight: '600',
-                                    background: (showCropTool || previewFrames.length > 0) ? 'linear-gradient(135deg, #4CAF50 0%, #388E3C 100%)' : '#ccc',
+                                    background: previewFrames.length > 0 ? 'linear-gradient(135deg, #4CAF50 0%, #388E3C 100%)' : '#ccc',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '10px',
-                                    cursor: extracting || (!showCropTool && previewFrames.length === 0) ? 'not-allowed' : 'pointer',
+                                    cursor: extracting || previewFrames.length === 0 ? 'not-allowed' : 'pointer',
                                     width: '100%',
                                     transition: 'all 0.3s ease',
-                                    boxShadow: (showCropTool || previewFrames.length > 0) ? '0 2px 8px rgba(76, 175, 80, 0.3)' : 'none'
+                                    boxShadow: previewFrames.length > 0 ? '0 2px 8px rgba(76, 175, 80, 0.3)' : 'none'
                                 }}
                             >
                                 {extracting ? 'Extracting...' :

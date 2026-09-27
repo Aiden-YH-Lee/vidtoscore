@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_file
-from extractor import download_video, extract, frames_to_pdf, VideoDownloadError
+from extractor import download_video, extract, frames_to_pdf, VideoDownloadError, detect_score_changes
 from flask_cors import CORS
 import cv2
 import os
@@ -214,6 +214,41 @@ def extract_frames():
 
     except Exception as e:
         return jsonify({'error': f'Extraction failed: {str(e)}'}), 500
+
+
+@app.route('/api/video/detect-frames', methods=['POST'])
+def detect_frames():
+    """Scan a time range for distinct score/slide states (content-based, no interval)."""
+    try:
+        data = request.json
+
+        filename = data.get('filename')
+        x1 = int(data.get('x1', 0))
+        y1 = int(data.get('y1', 0))
+        x2 = int(data.get('x2', 0))
+        y2 = int(data.get('y2', 0))
+        start = int(data.get('start', 0))
+        end = int(data.get('end', 0))
+        threshold_percent = float(data.get('sensitivity', 5.0))
+
+        frames = detect_score_changes(
+            filename, x1, y1, x2, y2, start, end, threshold_percent)
+
+        result = []
+        for timestamp, frame in frames:
+            success, buf = cv2.imencode('.png', frame)
+            if not success:
+                continue
+            b64 = base64.b64encode(buf).decode('utf-8')
+            result.append({
+                'timestamp': timestamp,
+                'data': f'data:image/png;base64,{b64}'
+            })
+
+        return jsonify({'frames': result})
+
+    except Exception as e:
+        return jsonify({'error': f'Detection failed: {str(e)}'}), 500
 
 
 @app.route('/api/video/extract-from-frames', methods=['POST'])
