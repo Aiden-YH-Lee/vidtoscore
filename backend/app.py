@@ -9,6 +9,7 @@ from PIL import Image
 import io
 import threading
 import uuid
+from urllib.parse import urlparse
 
 
 import time
@@ -27,6 +28,21 @@ if not os.path.exists(DOWNLOADS_DIR):
 
 # Store download tasks
 download_tasks = {}
+
+YOUTUBE_HOSTS = {
+    'youtube.com', 'www.youtube.com', 'm.youtube.com',
+    'music.youtube.com', 'youtu.be',
+}
+
+
+def is_youtube_url(url):
+    """Restrict downloads to YouTube - yt-dlp supports 1700+ sites, and this
+    app should not act as an open fetch proxy for arbitrary attacker-chosen URLs."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    return parsed.scheme in ('http', 'https') and parsed.hostname in YOUTUBE_HOSTS
 
 
 def cleanup_old_files():
@@ -71,6 +87,9 @@ def upload_video():
 
         if not url:
             return jsonify({'error': 'No URL provided'}), 400
+
+        if not is_youtube_url(url):
+            return jsonify({'error': 'Only YouTube URLs are supported'}), 400
 
         task_id = str(uuid.uuid4())
         download_tasks[task_id] = {

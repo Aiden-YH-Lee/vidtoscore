@@ -54,9 +54,6 @@ def download_video(vid_url, progress_callback=None):
             'retries': 10,
             'ignoreerrors': False,
             'extract_flat': False,
-            # YouTube requires solving a JS signature challenge for most formats;
-            # without a runtime, formats silently go missing or downloads 403.
-            'js_runtimes': {'node': {}},
         }
 
         # Handle cookies from environment variable
