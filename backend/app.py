@@ -189,7 +189,7 @@ def extract_frames():
         gap = int(data.get('gap', 10))
 
         # Extract frames
-        frames = extract(filename, x1, y1, x2, y2, start, end, interval)
+        frames = [f for _, f in extract(filename, x1, y1, x2, y2, start, end, interval)]
 
         if not frames:
             return jsonify({'error': 'No frames extracted'}), 400
@@ -218,7 +218,8 @@ def extract_frames():
 
 @app.route('/api/video/detect-frames', methods=['POST'])
 def detect_frames():
-    """Scan a time range for distinct score/slide states (content-based, no interval)."""
+    """Get preview frames either via content-based change detection (mode=auto,
+    the default) or a fixed interval (mode=interval)."""
     try:
         data = request.json
 
@@ -229,10 +230,15 @@ def detect_frames():
         y2 = int(data.get('y2', 0))
         start = int(data.get('start', 0))
         end = int(data.get('end', 0))
-        threshold_percent = float(data.get('sensitivity', 5.0))
+        mode = data.get('mode', 'auto')
 
-        frames = detect_score_changes(
-            filename, x1, y1, x2, y2, start, end, threshold_percent)
+        if mode == 'interval':
+            interval = int(data.get('interval', 1000))
+            frames = extract(filename, x1, y1, x2, y2, start, end, interval)
+        else:
+            threshold_percent = float(data.get('sensitivity', 5.0))
+            frames = detect_score_changes(
+                filename, x1, y1, x2, y2, start, end, threshold_percent)
 
         result = []
         for timestamp, frame in frames:
@@ -248,7 +254,7 @@ def detect_frames():
         return jsonify({'frames': result})
 
     except Exception as e:
-        return jsonify({'error': f'Detection failed: {str(e)}'}), 500
+        return jsonify({'error': f'Frame extraction failed: {str(e)}'}), 500
 
 
 @app.route('/api/video/extract-from-frames', methods=['POST'])

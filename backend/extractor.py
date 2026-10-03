@@ -178,7 +178,7 @@ def extract(file_name, x1, y1, x2, y2, start, end, interval):
             cropped_img = img[y1:y2, x1:x2]
             # Verify cropped image is not empty
             if cropped_img.size > 0:
-                result.append(cropped_img)
+                result.append((time, cropped_img))
             else:
                 print(f"Warning: Empty crop at time {time}ms")
 

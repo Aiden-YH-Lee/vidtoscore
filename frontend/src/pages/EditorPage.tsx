@@ -22,6 +22,8 @@ export default function EditorPage() {
     const [startTime, setStartTime] = useState(0);
     const [endTime, setEndTime] = useState(0);
     const [sensitivity, setSensitivity] = useState(5); // % of crop that must change to count as a new page
+    const [extractionMode, setExtractionMode] = useState<'auto' | 'manual'>('auto');
+    const [interval, setInterval] = useState(1000); // manual mode: ms between captures
     const [currentTime, setCurrentTime] = useState(0);
 
     const [crop, setCrop] = useState<Crop>({
@@ -325,11 +327,49 @@ export default function EditorPage() {
         setPreviewFrames(frames => frames.filter(f => f.id !== frameId));
     };
 
+    // Manually capture the current video position - fills in a line auto-detection missed
+    const handleAddFrameAtCurrentTime = () => {
+        const video = videoRef.current;
+        if (!video || !crop.width || !crop.height) return;
+
+        const scaleX = capturedImageDimensions.natural.width / capturedImageDimensions.displayed.width;
+        const scaleY = capturedImageDimensions.natural.height / capturedImageDimensions.displayed.height;
+
+        const x1 = Math.max(0, Math.round(crop.x * scaleX));
+        const y1 = Math.max(0, Math.round(crop.y * scaleY));
+        const width = Math.round((crop.width || 0) * scaleX);
+        const height = Math.round((crop.height || 0) * scaleY);
+        const x2 = Math.min(videoDimensions.width, x1 + width);
+        const y2 = Math.min(videoDimensions.height, y1 + height);
+        const finalWidth = x2 - x1;
+        const finalHeight = y2 - y1;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = finalWidth;
+        canvas.height = finalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.drawImage(video, x1, y1, finalWidth, finalHeight, 0, 0, finalWidth, finalHeight);
+        const data = canvas.toDataURL('image/png');
+        const timestamp = Math.floor(video.currentTime * 1000);
+
+        setPreviewFrames(frames =>
+            [...frames, { id: Date.now(), data, timestamp }].sort((a, b) => a.timestamp - b.timestamp)
+        );
+        setShowPreview(true);
+    };
+
     // Generate preview frames
     const handlePreview = async () => {
         const video = videoRef.current;
         if (!video || !crop.width || !crop.height) {
             setError('Please select a crop region first');
+            return;
+        }
+
+        if (extractionMode === 'manual' && interval <= 0) {
+            setError('Interval must be greater than 0');
             return;
         }
 
@@ -356,7 +396,7 @@ export default function EditorPage() {
             console.log('Crop (displayed):', crop.x, crop.y, crop.width, crop.height);
             console.log('Scale factors:', scaleX, scaleY);
             console.log('Crop (natural):', x1, y1, finalWidth, finalHeight);
-            console.log('Detecting score changes from', startTime, 'to', endTime, 'sensitivity', sensitivity);
+            console.log(`Getting preview frames (${extractionMode}) from`, startTime, 'to', endTime);
 
             const response = await fetch(`${API_URL}/api/video/detect-frames`, {
                 method: 'POST',
@@ -366,7 +406,9 @@ export default function EditorPage() {
                     x1, y1, x2, y2,
                     start: startTime,
                     end: endTime,
+                    mode: extractionMode,
                     sensitivity,
+                    interval,
                 }),
             });
 
@@ -617,6 +659,16 @@ export default function EditorPage() {
                             </div>
                         </div>
 
+                        {showCropTool && (
+                            <button
+                                onClick={handleAddFrameAtCurrentTime}
+                                style={{ ...styles.button, width: '100%', marginBottom: '0.75rem' }}
+                                title="Capture the crop region at this exact video position and insert it into the preview - use this to fill in a line auto-detection missed"
+                            >
+                                + Add Frame at Current Time
+                            </button>
+                        )}
+
                         <p>Duration: {formatTime(videoData.duration)}</p>
                         <p>Resolution: {videoData.width} x {videoData.height}</p>
                         <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>
@@ -685,27 +737,76 @@ export default function EditorPage() {
                                 <span style={{ fontSize: '0.85rem', color: '#666' }}>({endTime}ms)</span>
                             </div>
 
-                            <div style={{ marginTop: '0.75rem' }}>
-                                <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
-                                    Change sensitivity: {sensitivity}% {' '}
-                                    <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                                        (lower catches subtler changes, higher ignores small flicker)
-                                    </span>
-                                </label>
-                                <input
-                                    type="range"
-                                    value={sensitivity}
-                                    onChange={(e) => setSensitivity(Number(e.target.value))}
-                                    style={{ width: '100%' }}
-                                    min="1"
-                                    max="30"
-                                    step="1"
-                                />
+                            <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+                                <button
+                                    onClick={() => setExtractionMode('auto')}
+                                    style={{
+                                        ...styles.button,
+                                        flex: 1,
+                                        fontSize: '0.85rem',
+                                        padding: '0.5rem',
+                                        background: extractionMode === 'auto' ? styles.button.background : '#e5e7eb',
+                                        color: extractionMode === 'auto' ? 'white' : '#4b5563',
+                                        boxShadow: extractionMode === 'auto' ? styles.button.boxShadow : 'none'
+                                    }}
+                                >
+                                    Auto Detect
+                                </button>
+                                <button
+                                    onClick={() => setExtractionMode('manual')}
+                                    style={{
+                                        ...styles.button,
+                                        flex: 1,
+                                        fontSize: '0.85rem',
+                                        padding: '0.5rem',
+                                        background: extractionMode === 'manual' ? styles.button.background : '#e5e7eb',
+                                        color: extractionMode === 'manual' ? 'white' : '#4b5563',
+                                        boxShadow: extractionMode === 'manual' ? styles.button.boxShadow : 'none'
+                                    }}
+                                >
+                                    Manual Interval
+                                </button>
                             </div>
 
-                            <p style={{ fontSize: '0.9rem', color: '#666' }}>
-                                Frames are detected automatically by watching the crop region for changes - no need to guess an interval.
-                            </p>
+                            {extractionMode === 'auto' ? (
+                                <div style={{ marginTop: '0.75rem' }}>
+                                    <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
+                                        Change sensitivity: {sensitivity}% {' '}
+                                        <span style={{ fontSize: '0.8rem', color: '#666' }}>
+                                            (lower catches subtler changes, higher ignores small flicker)
+                                        </span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        value={sensitivity}
+                                        onChange={(e) => setSensitivity(Number(e.target.value))}
+                                        style={{ width: '100%' }}
+                                        min="1"
+                                        max="30"
+                                        step="1"
+                                    />
+                                    <p style={{ fontSize: '0.9rem', color: '#666' }}>
+                                        Frames are detected automatically by watching the crop region for changes - no need to guess an interval.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <label style={{ display: 'flex', alignItems: 'center' }}>
+                                        Interval (ms):
+                                        <input
+                                            type="number"
+                                            value={interval}
+                                            onChange={(e) => setInterval(Number(e.target.value))}
+                                            style={{ ...styles.input, marginLeft: '0.5rem', width: '100px', padding: '0.5rem' }}
+                                            min="100"
+                                            step="100"
+                                        />
+                                    </label>
+                                    <p style={{ fontSize: '0.9rem', color: '#666', margin: 0 }}>
+                                        ~{Math.max(0, Math.ceil((endTime - startTime) / interval))} frames
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Crop Region Controls */}
@@ -720,7 +821,10 @@ export default function EditorPage() {
                                     <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
                                         Draw a rectangle around the sheet music:
                                     </p>
-                                    <div style={{ maxHeight: '400px', overflow: 'auto', border: '1px solid #ccc' }}>
+                                    {/* overflow: visible, not auto/hidden - ReactCrop's drag handles intentionally
+                                        poke a few px past the image edge (see .ord-e/.ord-se in its CSS), and
+                                        overflow:auto turns that decorative overshoot into a real scrollbar. */}
+                                    <div style={{ maxHeight: '60vh', overflow: 'visible', border: '1px solid #ccc' }}>
                                         <ReactCrop
                                             crop={crop}
                                             onChange={(c) => {
@@ -739,7 +843,9 @@ export default function EditorPage() {
                                                 ref={imgRef}
                                                 src={capturedFrame}
                                                 alt="Video frame"
-                                                style={{ maxWidth: '100%' }}
+                                                // Bound on BOTH axes (like object-fit: contain) - constraining only
+                                                // width still lets a tall/portrait capture overflow past maxHeight.
+                                                style={{ maxWidth: '100%', maxHeight: '60vh', width: 'auto', height: 'auto', display: 'block' }}
                                                 onLoad={handleImageLoad}
                                             />
                                         </ReactCrop>
